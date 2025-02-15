@@ -1,0 +1,39 @@
+# Ignore data directories
+/data/
+/results/
+
+# Python
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+.venv/
+*.conda
+
+# Logs
+*.log
+*.out
+*.err
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# Environment/Secrets
+.env
+*.secret
+
+# Temporary files
+*.swp
+*.bak
+*.tmp
+.DS_Store
+Thumbs.db
+
+# Models
+*.h5
+*.ckpt
+*.pt
+
+# SLURM
+*.sbatch
+output.log
