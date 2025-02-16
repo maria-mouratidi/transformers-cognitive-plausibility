@@ -1,4 +1,4 @@
-from utils_ZuCo import * 
+from thesis.helpers.utils_ZuCo import * 
 # instantiate data transformer object for task 1 (corresponds to the folder
 # where results for  task 1 in  specified subdir are stored) on sentence level
 # with min-max scaling 
