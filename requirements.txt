@@ -1,8 +1,0 @@
-numpy==1.17.0
-pandas==0.24.2
-regex==2.2.1
-scipy==1.2.1
-
-# path from cs01: cd /scratch/7982399/thesis
-# Activate conda before running: source /scratch/7982399/conda/bin/activate thesis_env
-# to run: sbatch scripts/run_job.sh
