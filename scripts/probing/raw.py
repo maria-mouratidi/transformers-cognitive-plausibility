@@ -99,28 +99,37 @@ def aggregate_attention(attention_weights: torch.Tensor) -> torch.Tensor:
     return torch.stack(aggregated_attention, dim=0)
 
 if __name__ == "__main__":
-    torch.cuda.empty_cache()
-    torch.set_default_device('cuda:0')
 
-    # Load model
-    model, tokenizer = load_model()
+    print(f"CUDA Available: {torch.cuda.is_available()}")
     
-    # Optional: Save model in safetensors format
-    #save_model(model, tokenizer, "/scratch/7982399/hf_cache")
+    for i in range(torch.cuda.device_count()):
+        print(f"GPU {i}: {torch.cuda.get_device_name(i)}")
+        print(f"  Total Memory: {torch.cuda.get_device_properties(i).total_memory / 1024**3:.2f} GB")
+        print(f"  Allocated Memory: {torch.cuda.memory_allocated(i) / 1024**3:.2f} GB")
+        print(f"  Cached Memory: {torch.cuda.memory_reserved(i) / 1024**3:.2f} GB")
+        print("-" * 40)
+    # torch.cuda.empty_cache()
+    # torch.set_default_device('cuda:0')
+
+    # # Load model
+    # model, tokenizer = load_model()
     
-    sentences = [
-        "The quick brown fox jumps over the lazy dog.",
-        "She read the book that he recommended to them."
-    ]
+    # # Optional: Save model in safetensors format
+    # #save_model(model, tokenizer, "/scratch/7982399/hf_cache")
     
-    # Get attention patterns
-    tokens, attention = get_sentence_attention(model, tokenizer, sentences)
+    # sentences = [
+    #     "The quick brown fox jumps over the lazy dog.",
+    #     "She read the book that he recommended to them."
+    # ]
     
-    # Aggregate attention
-    result = aggregate_attention(attention)
+    # # Get attention patterns
+    # tokens, attention = get_sentence_attention(model, tokenizer, sentences)
     
-    # Print results
-    print("\nAttention shape analysis:")
-    print(f"Number of layers: {len(attention)}")
-    print(f"Attention shape per layer: {attention[0].shape}")
-    print(f"Final aggregated shape: {result.shape}")
+    # # Aggregate attention
+    # result = aggregate_attention(attention)
+    
+    # # Print results
+    # print("\nAttention shape analysis:")
+    # print(f"Number of layers: {len(attention)}")
+    # print(f"Attention shape per layer: {attention[0].shape}")
+    # print(f"Final aggregated shape: {result.shape}")
