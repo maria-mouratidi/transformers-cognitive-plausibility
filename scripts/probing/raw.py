@@ -1,60 +1,38 @@
 import torch
-import transformers
 from transformers import AutoTokenizer, AutoModelForCausalLM
+from load_model import load_llama
 from typing import List, Tuple, Dict
-import os
-import gc
 
-def load_model(
-    model_id: str = "meta-llama/Llama-3.1-8B",
-    cache_dir: str = '/scratch/7982399/hf_cache',
-    local_path: str = '/scratch/7982399/hf_cache') -> Tuple[AutoModelForCausalLM, AutoTokenizer]:
+def word_to_tokens(encoded):
 
-    # Setup device
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    tokens_mapping = []
+    for word_id in encoded.word_ids():
+        if word_id is not None:
+            start, end = encoded.word_to_tokens(word_id)
+            if start == end - 1:
+                tokens = [start]
+            else:
+                tokens = [start, end-1]
+            if len(tokens_mapping) == 0 or tokens_mapping[-1] != tokens:
+                tokens_mapping.append(tokens)
     
-    # Initialize tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(local_path if local_path else model_id, cache_dir=cache_dir)
-    tokenizer.pad_token = tokenizer.eos_token
-    
-    # Load model
-    model = AutoModelForCausalLM.from_pretrained(
-        local_path if local_path else model_id,
-        cache_dir=cache_dir,
-        torch_dtype=torch.bfloat16,
-        attn_implementation="eager",)
-        #device_map='auto')#.to(device)
-    
-    print(f"Model loaded on device: {next(model.parameters()).device}")
-    
-    # Compile model if requested and available
-    if hasattr(torch, 'compile') and device == 'cuda':
-        model = torch.compile(model)
-    
-    model.eval()
-    return model, tokenizer
-
-def save_model(model: AutoModelForCausalLM, tokenizer: AutoTokenizer, save_path: str) -> None:
-    os.makedirs(save_path, exist_ok=True)
-    model.save_pretrained(save_path, safe_serialization=True)
-    tokenizer.save_pretrained(save_path)
-    print(f"Model and tokenizer saved to {save_path}")
-
+    return tokens_mapping
 
 def get_sentence_attention(
-    model: AutoModelForCausalLM,
-    tokenizer: AutoTokenizer,
-    sentences: List[str]) -> Tuple[List[List[str]], torch.Tensor]:
+        model: AutoModelForCausalLM,
+        tokenizer: AutoTokenizer,
+        sentences: List[str]
+) -> Tuple[List[List[str]], torch.Tensor]:
 
     # Tokenize with padding and truncation
-    inputs = tokenizer(sentences, return_tensors="pt", padding=True, truncation=True, return_attention_mask=True)
+    encoded = tokenizer(sentences, return_tensors="pt", padding=True, truncation=True, return_attention_mask=True)
     
     # Move inputs to model's device
     inputs = {k: v.to(model.device) for k, v in inputs.items()}
     
     # Get attention weights
     with torch.no_grad():
-        outputs = model(
+        outputs = model(**inputs
             input_ids=inputs["input_ids"],
             attention_mask=inputs["attention_mask"],
             output_attentions=True,
@@ -69,7 +47,9 @@ def get_sentence_attention(
     return tokens_batch, attention_weights
 
 
-def aggregate_attention(attention_weights: torch.Tensor) -> torch.Tensor:
+def aggregate_attention(
+    attention_weights: torch.Tensor
+) -> torch.Tensor:
     """
     Aggregate attention weights across heads and words.
     
@@ -100,14 +80,10 @@ def aggregate_attention(attention_weights: torch.Tensor) -> torch.Tensor:
 
 if __name__ == "__main__":
 
-    print(f"CUDA Available: {torch.cuda.is_available()}")
+   _, tokenizer = load_llama()
+   print(word_to_tokens(tokenizer))
     
-    for i in range(torch.cuda.device_count()):
-        print(f"GPU {i}: {torch.cuda.get_device_name(i)}")
-        print(f"  Total Memory: {torch.cuda.get_device_properties(i).total_memory / 1024**3:.2f} GB")
-        print(f"  Allocated Memory: {torch.cuda.memory_allocated(i) / 1024**3:.2f} GB")
-        print(f"  Cached Memory: {torch.cuda.memory_reserved(i) / 1024**3:.2f} GB")
-        print("-" * 40)
+    
     # torch.cuda.empty_cache()
     # torch.set_default_device('cuda:0')
 
