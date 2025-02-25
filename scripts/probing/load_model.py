@@ -13,7 +13,6 @@ def load_llama(
     
     # Initialize tokenizer
     tokenizer = AutoTokenizer.from_pretrained(local_path if local_path else model_id, cache_dir=cache_dir)
-    tokenizer.pad_token = tokenizer.eos_token
     
     # Load model
     model = AutoModelForCausalLM.from_pretrained(
