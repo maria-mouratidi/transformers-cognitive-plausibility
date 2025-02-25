@@ -4,12 +4,12 @@ from load_model import load_llama
 from typing import List, Tuple, Dict
 from collections import defaultdict
 
-def map_tokens_to_words(encoded_list):
+def map_tokens_to_words(encoded_batch):
     mappings = []
     
-    for encoded in encoded_list:
+    for encoded in encoded_batch:
         word_map = []
-        for word_id in encoded.word_ids():
+        for word_id in encoded.word_ids:
             if word_id is not None:
                 start, end = encoded.word_to_tokens(word_id)
                 if start == end - 1:
@@ -25,29 +25,22 @@ def map_tokens_to_words(encoded_list):
 def get_sentence_attention(
         model: AutoModelForCausalLM,
         tokenizer: AutoTokenizer,
-        sentences: List[str]
+        encoded_batch
 ) -> Tuple[List[List[str]], torch.Tensor]:
-
-    # Tokenize with padding and truncation
-    encoded = tokenizer(sentences, return_tensors="pt", return_offsets_mapping = True)
-    # Move inputs to model's device
-    encoded = {k: v.to(model.device) for k, v in encoded.items()}
-    print(encoded)
+    
+    word_mappings = map_tokens_to_words(encoded_batch.encodings) #before moving to device
+    encoded_batch = {k: v.to(model.device) for k, v in encoded_batch.items()}
     
     # Get attention weights
     with torch.no_grad():
-        outputs = model(**encoded,
-            output_attentions=True,
-            return_dict=True,
-            )
+        outputs = model(**encoded_batch, output_attentions=True, return_dict=True)
     
-    attention_weights = outputs.attentions
-    word_mappings = []
+    attention_weights = outputs.attentions 
     word_attentions = []
 
-    #TODO: ask claude whether this can be done more efficiently.
+    #TODO: maybe this can be done more efficiently.
     for sentence_idx, word_map in enumerate(word_mappings):
-        print("Processing sentence: ", sentence_idx)
+        print("Processing map: ", word_map)
         for word_idx, token_group in enumerate(word_map):  #index is the word idx, the item is a list of token(s)
             word_attention = torch.zeros()  #TODO: find the correct shape here
             print(f"Processing word: {word_idx} which corresponds to tokens {token_group}")
@@ -96,22 +89,19 @@ def aggregate_attention(
 
 if __name__ == "__main__":
 
-    # torch.cuda.empty_cache()
+    torch.cuda.empty_cache()
     # torch.set_default_device('cuda:0')
-
     model, tokenizer = load_llama()
-    
+
     sentences = [
         "The quick brown fox jumps over the lazy dog.",
-        "She read the book that he recommended to them.",
-        "This is a tokenization example."
+        #"She read the book that he recommended to them."
     ]
-
-    encoded = [tokenizer(sentence) for sentence in sentences]
-
-    print(map_tokens_to_words(encoded))
-    # # Get attention patterns
-    # print(get_sentence_attention(model, tokenizer, sentences))
+    
+    encoded_batch = tokenizer(sentences, padding=True, return_tensors='pt', truncation=True) 
+ 
+    # Get attention patterns
+    print(get_sentence_attention(model, tokenizer, encoded_batch))
     
     # # Aggregate attention
     # result = aggregate_attention(attention)
