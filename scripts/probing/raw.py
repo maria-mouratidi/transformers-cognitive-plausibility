@@ -37,9 +37,8 @@ def get_sentence_attention(
     
     attention_weights = torch.stack(outputs.attentions)  # Shape: [num_layers, batch, num_heads, seq_len, seq_len]
     num_layers, batch_size, num_heads, seq_len, _ = attention_weights.shape
-    print("Initial shape: ", attention_weights.shape)
 
-    # Initialize word-level attention tensor (same shape as original) #TODO: we need word length not token length
+    # Initialize word-level attention tensor (same shape as original) #TODO: we want word length not token length but worst case scenario we have trailing 0s
     word_attentions = torch.zeros((num_layers, batch_size, num_heads, seq_len, seq_len), device=model.device)
 
     # Loop through each sentence in batch
@@ -50,12 +49,12 @@ def get_sentence_attention(
             # Sum token-level attentions for the word across all layers and heads
             word_attention = torch.zeros((num_layers, num_heads, seq_len), device=model.device)
             
-            for token_idx in token_group: #TODO: verify it is the right direction of attention
-                token_attention = attention_weights[:, sentence_idx, :, token_idx, :]  # Keep all layers & heads
+            for token_idx in token_group:
+                token_attention = attention_weights[:, sentence_idx, :, :, token_idx]  # How much attention word j receives from all other words i?
                 word_attention += token_attention  # Sum token attentions for the word
 
             # Store summed attention at the word position
-            word_attentions[:, sentence_idx, :, word_idx, :] = word_attention
+            word_attentions[:, sentence_idx, :, :, word_idx] = word_attention #Keep all layers & heads
 
     # Convert token IDs back to tokens
     tokens_batch = [tokenizer.convert_ids_to_tokens(input_ids) for input_ids in encoded_batch["input_ids"].tolist()]
@@ -63,7 +62,8 @@ def get_sentence_attention(
     return tokens_batch, word_attentions  # Shape: [num_layers, batch, num_heads, seq_len, seq_len]
 
 def aggregate_attention(
-    attention_weights: torch.Tensor
+    attention_weights: torch.Tensor,
+    mode = "sum"
 ) -> torch.Tensor:
     """
     Aggregate attention weights across heads and words.
@@ -85,8 +85,8 @@ def aggregate_attention(
         # Average across attention heads [batch, seq_len, seq_len]
         head_average = layer_attention.mean(dim=1)
         
-        # Average across words [batch, seq_len]
-        word_average = head_average.mean(dim=1)
+        # Average (or sum) across words [batch, seq_len]
+        word_average = head_average.sum(dim=1) if mode == "sum" else head_average.mean(dim=1)
         
         aggregated_attention.append(word_average)
     
@@ -107,13 +107,12 @@ if __name__ == "__main__":
     encoded_batch = tokenizer(sentences, padding=True, return_tensors='pt', truncation=False) 
  
     # Get attention patterns
-    get_sentence_attention(model, tokenizer, encoded_batch)
+    tokens, attention = get_sentence_attention(model, tokenizer, encoded_batch)
     
-    # # Aggregate attention
-    # result = aggregate_attention(attention)
+    # Aggregate attention
+    attention_agg = aggregate_attention(attention)
     
-    # # Print results
-    # print("\nAttention shape analysis:")
-    # print(f"Number of layers: {len(attention)}")
-    # print(f"Attention shape per layer: {attention[0].shape}")
-    # print(f"Final aggregated shape: {result.shape}")
+    # Print results
+    print("\nAttention shape analysis:")
+    print(f"Extracted attention: {attention.shape}")
+    print(f"Final aggregated shape: {attention_agg.shape}")
