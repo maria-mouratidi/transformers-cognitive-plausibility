@@ -45,6 +45,8 @@ def encode_input(model, tokenizer, prompt, sentences):
 def extract_token_attention(model, tokenizer, encodings, decoding=True):
 
     with torch.no_grad():
+
+
         # First forward pass with input prompt
         output = model(**encodings, output_attentions=True, use_cache=True)
         
@@ -113,38 +115,31 @@ def extract_word_attention(
             # Store averaged attention at the word position
             word_attentions[:, sentence_idx, :, :, word_idx] = word_attention
 
-    return word_attentions  # Shape: [num_layers, batch, num_heads, query_len, seq_len]
+    return word_attentions 
+
 def aggregate_attention(
     attention_weights: torch.Tensor,
-    mode = "sum"
+    average_layers: bool = False
 ) -> torch.Tensor:
-    """
-    Aggregate attention weights across heads and words.
-    
+    """    
     Args:
         attention_weights: Attention weights from model
-            [layer x batch x heads x seq_len x seq_len]
+            shape [num_layers, batch_size, num_heads, query_len, max_words]
+        average_layers: Whether to average across layers
     
     Returns:
-        Aggregated attention weights [layers x batch x seq_len]
+        If average_layers=True: [batch_size, query_len, max_words]
+        If average_layers=False: [num_layers, batch_size, query_len, max_words]
     """
-    num_layers = len(attention_weights)
-    aggregated_attention = []
+    # Head average
+    head_averaged = attention_weights.mean(dim=2)  # [num_layers, batch_size, query_len, max_words]
     
-    for layer in range(num_layers):
-        # Get attention weights for current layer [batch, heads, seq_len, seq_len]
-        layer_attention = attention_weights[layer]
-        
-        # Average across attention heads [batch, seq_len, seq_len]
-        head_average = layer_attention.mean(dim=1)
-        
-        # Average (or sum) across words [batch, seq_len]
-        word_average = head_average.sum(dim=1) if mode == "sum" else head_average.mean(dim=1)
-        
-        aggregated_attention.append(word_average)
+    # Optional layer average
+    if average_layers:
+        return head_averaged.mean(dim=0)  # [batch_size, query_len, max_words]
+    else:
+        return head_averaged  # [num_layers, batch_size, query_len, max_words]
     
-    # Stack layers [layers, batch, seq_len]
-    return torch.stack(aggregated_attention, dim=0)
     #TODO: remove prompt attention before comparison
 
 if __name__ == "__main__":
@@ -163,10 +158,11 @@ if __name__ == "__main__":
 
     token_level_attention, generated_text = extract_token_attention(model, tokenizer, encodings)
     print(generated_text)
-    print(token_level_attention.shape)
+    print("Shape in token-level: ", token_level_attention.shape)
     
     attention = extract_word_attention(word_mappings, token_level_attention)
-    print(attention.shape)
-    
-    # Aggregate attention
-    #attention_agg = aggregate_attention(attention)
+    print("Shape in word-level: ", attention.shape)
+
+    # Get attention averaged across all layers
+    averaged_attention = aggregate_attention(attention, average_layers=True)
+    print(f"Shape with averaged layers: {averaged_attention.shape}")  # [batch, seq_len]
