@@ -1,7 +1,10 @@
 import os
 import torch
+import transformers
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from typing import List, Tuple, Dict
+
+transformers.logging.set_verbosity_error()
 
 def load_llama(
     model_id: str = "meta-llama/Llama-3.1-8B",
@@ -12,17 +15,17 @@ def load_llama(
     device = "cuda" if torch.cuda.is_available() else "cpu"
     
     # Initialize tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(local_path if local_path else model_id, cache_dir=cache_dir)
+    tokenizer = AutoTokenizer.from_pretrained(
+        local_path if local_path else model_id,
+        cache_dir=cache_dir)
     
     # Load model
     model = AutoModelForCausalLM.from_pretrained(
         local_path if local_path else model_id,
         cache_dir=cache_dir,
         torch_dtype=torch.bfloat16,
-        attn_implementation="eager").to(device)
-        #device_map='auto').to(device)
+        attn_implementation="eager",).to(device) 
     
-    print(f"Model loaded on device: {next(model.parameters()).device}")
     
     # Compile model if requested and available
     if hasattr(torch, 'compile') and device == 'cuda':

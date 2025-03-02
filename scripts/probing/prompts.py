@@ -11,7 +11,7 @@ These questions serve as a control condition and will require you to select the 
 
 # Procedure: Pass the instructions as a prompt, and all the sentences along with the control questions at once.
 
-prompt_task2 = """ 
+prompt_task3 = """ 
 
 You will be presented with sentences that contain specific types of semantic relations.
  Your task is to focus on identifying a particular relation type in each block of sentences.

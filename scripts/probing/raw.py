@@ -1,8 +1,7 @@
 import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM
-from load_model import load_llama
+from load_model import *
 from typing import List, Tuple, Dict
-from collections import defaultdict
+from prompts import prompt_task2, prompt_task3
 
 def map_tokens_to_words(encoded_batch):
     mappings = []
@@ -22,45 +21,99 @@ def map_tokens_to_words(encoded_batch):
     
     return mappings
 
-def get_sentence_attention(
-        model: AutoModelForCausalLM,
-        tokenizer: AutoTokenizer,
-        encoded_batch
-) -> Tuple[List[List[str]], torch.Tensor]:
+def encode_input(model, tokenizer, prompt, sentences):
+    """Encode all sentences including a prompt"""
+    # Prepare input texts with prompt
+    input_texts = [prompt + sentence for sentence in sentences]
     
-    word_mappings = map_tokens_to_words(encoded_batch.encodings)  # Extract token-to-word mapping before moving to device
-    encoded_batch = {k: v.to(model.device) for k, v in encoded_batch.items()}
+    # Encode all sentences at once
+    tokenized = tokenizer(
+        input_texts,
+        padding=True,
+        return_tensors='pt',
+        truncation=False
+    )
     
-    # Get attention weights
-    with torch.no_grad():
-        outputs = model(**encoded_batch, output_attentions=True, return_dict=True)
+    # Get word mappings
+    word_mappings = map_tokens_to_words(tokenized.encodings)
     
-    attention_weights = torch.stack(outputs.attentions)  # Shape: [num_layers, batch, num_heads, seq_len, seq_len]
-    num_layers, batch_size, num_heads, seq_len, _ = attention_weights.shape
+    # Move to device
+    encodings = {k: v.to(model.device) for k, v in tokenized.items()}
+    
+    return word_mappings, encodings
 
-    # Initialize word-level attention tensor (same shape as original) #TODO: we want word length not token length but worst case scenario we have trailing 0s
-    word_attentions = torch.zeros((num_layers, batch_size, num_heads, seq_len, seq_len), device=model.device)
+def extract_token_attention(model, tokenizer, encodings, decoding=True):
+
+    with torch.no_grad():
+        # First forward pass with input prompt
+        output = model(**encodings, output_attentions=True, use_cache=True)
+        
+        # Get attention from first pass
+        attention = torch.stack(output.attentions)  # [num_layers, batch_size, num_heads, seq_len, seq_len]
+        generated_text = ["Decoding disabled."] * encodings['input_ids'].size(0)
+
+        if decoding:
+            # Generate one token for each sentence in batch
+            next_tokens = output.logits[:, -1, :].argmax(dim=-1).unsqueeze(-1)
+            
+            # Decode next tokens while reusing past key values
+            output = model(input_ids=next_tokens,
+                         past_key_values=output.past_key_values,
+                         output_attentions=True,
+                         use_cache=True)
+            
+            # Use attention from the decoding step
+            attention = torch.stack(output.attentions)  # [num_layers, batch_size, num_heads, 1, seq_len]
+            generated_text = tokenizer.batch_decode(next_tokens, skip_special_tokens=True)
+        
+        return attention, generated_text
+    
+def extract_word_attention(
+        word_mappings: List[List[List[int]]],
+        generated_attention: torch.Tensor
+) -> torch.Tensor:
+    """
+    Extract word-level attention from token-level attention weights.
+    
+    Args:
+        word_mappings: List of token indices for each word in each sentence
+        generated_attention: Attention tensor [num_layers, batch_size, num_heads, seq/1, seq_len]
+    
+    Returns:
+        Word attention tensor [num_layers, batch_size, num_heads, query_len, max_words]
+    """
+    num_layers, batch_size, num_heads, query_len, _ = generated_attention.shape
+    
+    # Get maximum number of words across all sentences
+    max_words = max(len(sentence_map) for sentence_map in word_mappings)
+
+    # Initialize word-level attention tensor
+    word_attentions = torch.zeros(
+        (num_layers, batch_size, num_heads, query_len, max_words), 
+        device=generated_attention.device
+    )
 
     # Loop through each sentence in batch
     for sentence_idx, word_map in enumerate(word_mappings):
-
-        for word_idx, token_group in enumerate(word_map):  
-
-            # Sum token-level attentions for the word across all layers and heads
-            word_attention = torch.zeros((num_layers, num_heads, seq_len), device=model.device)
+        for word_idx, token_group in enumerate(word_map):
+            # Average token-level attentions for the word across all layers and heads
+            word_attention = torch.zeros(
+                (num_layers, num_heads, query_len), 
+                device=generated_attention.device
+            )
             
             for token_idx in token_group:
-                token_attention = attention_weights[:, sentence_idx, :, :, token_idx]  # How much attention word j receives from all other words i?
-                word_attention += token_attention  # Sum token attentions for the word
+                # Get attention for this token
+                token_attention = generated_attention[:, sentence_idx, :, :, token_idx]
+                word_attention += token_attention
+            
+            # Normalize by number of tokens in the word
+            word_attention = word_attention / len(token_group)
+            
+            # Store averaged attention at the word position
+            word_attentions[:, sentence_idx, :, :, word_idx] = word_attention
 
-            # Store summed attention at the word position
-            word_attentions[:, sentence_idx, :, :, word_idx] = word_attention #Keep all layers & heads
-
-    # Convert token IDs back to tokens
-    tokens_batch = [tokenizer.convert_ids_to_tokens(input_ids) for input_ids in encoded_batch["input_ids"].tolist()]
-    print("Final shape: ", word_attentions.shape)
-    return tokens_batch, word_attentions  # Shape: [num_layers, batch, num_heads, seq_len, seq_len]
-
+    return word_attentions  # Shape: [num_layers, batch, num_heads, query_len, seq_len]
 def aggregate_attention(
     attention_weights: torch.Tensor,
     mode = "sum"
@@ -92,27 +145,28 @@ def aggregate_attention(
     
     # Stack layers [layers, batch, seq_len]
     return torch.stack(aggregated_attention, dim=0)
+    #TODO: remove prompt attention before comparison
 
 if __name__ == "__main__":
 
     torch.cuda.empty_cache()
     # torch.set_default_device('cuda:0')
     model, tokenizer = load_llama()
+    #save_model(model, tokenizer, "/scratch/7982399/hf_cache")
 
     sentences = [
         "This is a tokenization example",
         "The quick brown fox jumps over the lazy dog.",
     ]
-    #TODO: look into alternatives for truncation
-    encoded_batch = tokenizer(sentences, padding=True, return_tensors='pt', truncation=False) 
- 
-    # Get attention patterns
-    tokens, attention = get_sentence_attention(model, tokenizer, encoded_batch)
+    
+    word_mappings, encodings = encode_input(model, tokenizer, prompt_task2, sentences)
+
+    token_level_attention, generated_text = extract_token_attention(model, tokenizer, encodings)
+    print(generated_text)
+    print(token_level_attention.shape)
+    
+    attention = extract_word_attention(word_mappings, token_level_attention)
+    print(attention.shape)
     
     # Aggregate attention
-    attention_agg = aggregate_attention(attention)
-    
-    # Print results
-    print("\nAttention shape analysis:")
-    print(f"Extracted attention: {attention.shape}")
-    print(f"Final aggregated shape: {attention_agg.shape}")
+    #attention_agg = aggregate_attention(attention)
