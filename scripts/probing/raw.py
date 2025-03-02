@@ -133,6 +133,7 @@ def aggregate_attention(
     """
     # Head average
     head_averaged = attention_weights.mean(dim=2)  # [num_layers, batch_size, query_len, max_words]
+    head_averaged = head_averaged.squeeze(2) # [num_layers, batch_size, max_words]
     
     # Optional layer average
     if average_layers:
