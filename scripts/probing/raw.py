@@ -117,31 +117,72 @@ def extract_word_attention(
 
     return word_attentions 
 
+def normalize_attention(
+        attention_weights: torch.Tensor,
+) -> torch.Tensor:
+    """
+    Normalize attention weights using:
+    1. Z-score normalization across heads
+    2. Square root of sentence lengths normalization
+    
+    Args:
+        attention_weights: Attention tensor [num_layers, batch_size, num_heads, query_len, max_words]
+        
+    Returns:
+        Normalized attention tensor [num_layers, batch_size, num_heads, query_len, max_words]
+    """
+    # Length normalization
+    sentence_lengths = torch.count_nonzero(attention_weights, dim=-1)  # [num_layers, batch_size, num_heads, query_len]
+    sqrt_length = torch.sqrt(sentence_lengths.clamp(min=1.0))  # avoid 0 div
+    length_norm = attention_weights / sqrt_length.unsqueeze(-1)
+    
+    # Z-score normalization across heads
+    head_mean = length_norm.mean(dim=2, keepdim=True)  # [num_layers, batch_size, 1, query_len, max_words]
+    head_std = length_norm.std(dim=2, keepdim=True)  # [num_layers, batch_size, 1, query_len, max_words]
+    head_std = head_std.clamp(min=1e-9) # avoid 0 div
+    normalized_attention = (length_norm - head_mean) / head_std
+    
+    return normalized_attention
+
 def aggregate_attention(
     attention_weights: torch.Tensor,
-    average_layers: bool = False
+    average_layers: bool = True,
 ) -> torch.Tensor:
-    """    
-    Args:
-        attention_weights: Attention weights from model
-            shape [num_layers, batch_size, num_heads, query_len, max_words]
-        average_layers: Whether to average across layers
-    
-    Returns:
-        If average_layers=True: [batch_size, query_len, max_words]
-        If average_layers=False: [num_layers, batch_size, query_len, max_words]
-    """
-    # Head average
-    head_averaged = attention_weights.mean(dim=2)  # [num_layers, batch_size, query_len, max_words]
+    # First normalize
+    normalized_attention = normalize_attention(attention_weights)
+
+    head_averaged = normalized_attention.mean(dim=2)  # [num_layers, batch_size, query_len, max_words]
     head_averaged = head_averaged.squeeze(2) # [num_layers, batch_size, max_words]
     
+    s1 = head_averaged.shape
+    head_averaged = exclude_prompt(head_averaged, prompt_task2)
+    print(f"Excluding the prompt changes the shape from {s1} to {head_averaged.shape}")
     # Optional layer average
     if average_layers:
-        return head_averaged.mean(dim=0)  # [batch_size, query_len, max_words]
+        return head_averaged.mean(dim=0)  # [batch_size, max_words]
     else:
-        return head_averaged  # [num_layers, batch_size, query_len, max_words]
-    
+        return head_averaged  # [num_layers, batch_size, max_words]
     #TODO: remove prompt attention before comparison
+
+def exclude_prompt(
+    attention_weights: torch.Tensor,
+    prompt: str,
+) -> torch.Tensor:
+    """
+    Exclude attention weights for the prompt tokens.
+    
+    Args:
+        attention_weights: Attention tensor [num_layers, batch_size, num_heads, query_len, max_words]
+        prompt_length: Number of tokens in the prompt
+        
+    Returns:
+        Attention tensor without prompt tokens [num_layers, batch_size, num_heads, query_len, max_words]
+    """
+
+    prompt_tokens = tokenizer([prompt], padding=False, return_tensors='pt')
+    prompt_mappings = map_tokens_to_words(prompt_tokens.encodings)
+    prompt_length =  len(prompt_mappings[0])
+    return attention_weights[..., prompt_length:]
 
 if __name__ == "__main__":
 
@@ -161,9 +202,9 @@ if __name__ == "__main__":
     print(generated_text)
     print("Shape in token-level: ", token_level_attention.shape)
     
-    attention = extract_word_attention(word_mappings, token_level_attention)
-    print("Shape in word-level: ", attention.shape)
+    word_level_attention = extract_word_attention(word_mappings, token_level_attention)
+    print("Shape in word-level: ", word_level_attention.shape)
 
     # Get attention averaged across all layers
-    averaged_attention = aggregate_attention(attention, average_layers=True)
-    print(f"Shape with averaged layers: {averaged_attention.shape}")  # [batch, seq_len]
+    averaged_attention = aggregate_attention(word_level_attention, average_layers=False)
+    #print(f"Shape with averaged layers: {averaged_attention.shape}")  # [batch, seq_len]

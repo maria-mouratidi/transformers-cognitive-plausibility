@@ -26,11 +26,6 @@ def load_llama(
         torch_dtype=torch.bfloat16,
         attn_implementation="eager",).to(device) 
     
-    
-    # Compile model if requested and available
-    if hasattr(torch, 'compile') and device == 'cuda':
-        model = torch.compile(model)
-    
     model.eval()
     return model, tokenizer
 
