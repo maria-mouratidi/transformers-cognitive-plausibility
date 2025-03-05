@@ -24,7 +24,8 @@ def load_llama(
         local_path if local_path else model_id,
         cache_dir=cache_dir,
         torch_dtype=torch.bfloat16,
-        attn_implementation="eager",).to(device) 
+        attn_implementation="eager",
+        low_cpu_mem_usage=True)#.to(device) 
     
     model.eval()
     return model, tokenizer

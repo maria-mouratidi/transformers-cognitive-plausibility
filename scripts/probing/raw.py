@@ -1,7 +1,7 @@
 import torch
-from load_model import *
+from scripts.probing.load_model import *
 from typing import List, Tuple, Dict
-from prompts import prompt_task2, prompt_task3
+from materials.prompts import prompt_task2, prompt_task3
 
 def map_tokens_to_words(encoded_batch):
     mappings = []
@@ -145,8 +145,9 @@ def normalize_attention(
     return normalized_attention
 
 def aggregate_attention(
+    tokenizer: transformers.PreTrainedTokenizer,
     attention_weights: torch.Tensor,
-    average_layers: bool = True,
+    average_layers: bool = False
 ) -> torch.Tensor:
     # First normalize
     normalized_attention = normalize_attention(attention_weights)
@@ -155,16 +156,16 @@ def aggregate_attention(
     head_averaged = head_averaged.squeeze(2) # [num_layers, batch_size, max_words]
     
     s1 = head_averaged.shape
-    head_averaged = exclude_prompt(head_averaged, prompt_task2)
+    head_averaged = exclude_prompt(tokenizer, head_averaged, prompt_task2)
     print(f"Excluding the prompt changes the shape from {s1} to {head_averaged.shape}")
     # Optional layer average
     if average_layers:
         return head_averaged.mean(dim=0)  # [batch_size, max_words]
     else:
         return head_averaged  # [num_layers, batch_size, max_words]
-    #TODO: remove prompt attention before comparison
 
 def exclude_prompt(
+    tokenizer,
     attention_weights: torch.Tensor,
     prompt: str,
 ) -> torch.Tensor:
@@ -186,8 +187,6 @@ def exclude_prompt(
 
 if __name__ == "__main__":
 
-    torch.cuda.empty_cache()
-    # torch.set_default_device('cuda:0')
     model, tokenizer = load_llama()
     #save_model(model, tokenizer, "/scratch/7982399/hf_cache")
 
@@ -199,12 +198,10 @@ if __name__ == "__main__":
     word_mappings, encodings = encode_input(model, tokenizer, prompt_task2, sentences)
 
     token_level_attention, generated_text = extract_token_attention(model, tokenizer, encodings)
-    print(generated_text)
-    print("Shape in token-level: ", token_level_attention.shape)
     
     word_level_attention = extract_word_attention(word_mappings, token_level_attention)
-    print("Shape in word-level: ", word_level_attention.shape)
+    print("Shape: ", word_level_attention.shape)
 
     # Get attention averaged across all layers
-    averaged_attention = aggregate_attention(word_level_attention, average_layers=False)
+    averaged_attention = aggregate_attention(tokenizer, word_level_attention)
     #print(f"Shape with averaged layers: {averaged_attention.shape}")  # [batch, seq_len]
