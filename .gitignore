@@ -16,6 +16,9 @@ Anaconda3-*.sh
 *.out
 *.err
 
+# Plots
+*.png
+
 # Jupyter Notebook
 .ipynb_checkpoints/
 
