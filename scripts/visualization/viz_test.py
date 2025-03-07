@@ -47,9 +47,9 @@ def plot_attention_heatmaps(attention_tensor, sequence, batch_idx=0, save_dir=No
 attention_tensor = torch.load("/scratch/7982399/thesis/outputs/attention_tensor.pt")  # Load the attention tensor
 num_layers, batch_size, sent_len = attention_tensor.shape
 sentences = [
-        "As a child, his hero was Batman, and as a teenager his interests shifted towards music.",
-        "She won a Novel Prize in 1911.",
+        "As a child, his hero was Batman, and as a teenager his interests shifted towards music 0 0 0",
+        "She won a Novel Prize in 1911. 0 0 0 0 0 0 0 0 0 0 0 0 ",
     ]
     
 for batch_idx in range(batch_size):
-    plot_attention_heatmaps(attention_tensor, sentences[batch_idx], batch_idx=batch_idx, save_dir="/scratch/7982399/thesis/outputs/attention_plots")
+    plot_attention_heatmaps(attention_tensor, sentences[batch_idx].split(), batch_idx=batch_idx, save_dir="/scratch/7982399/thesis/outputs/attention_plots")
