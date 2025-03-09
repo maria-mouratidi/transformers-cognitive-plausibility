@@ -3,47 +3,43 @@ from scripts.probing.load_model import *
 from typing import List, Tuple, Dict
 from materials.prompts import prompt_task2, prompt_task3
 
-def encode_input(sentences, prompt, tokenizer, special_tokens=True):
-    if isinstance(sentences, str):
-        sentences = [sentences]  # Convert single sentence to list
-    
-    # Create full texts with prompt
-    full_texts = [prompt + sentence for sentence in sentences]
-    
-    # Batch encode with padding
-    inputs = tokenizer.batch_encode_plus(
-        full_texts,
-        return_tensors='pt',
-        padding=True,
-        add_special_tokens=special_tokens
-    )
-    
-    all_token_indices = []
-    
-    # For each sentence
-    for i, sentence in enumerate(sentences):
-        prompt_ids = tokenizer(prompt, add_special_tokens=False)['input_ids']
-        prompt_len = len(prompt_ids)
-        
-        # Get the mapping for words to token positions using the actual tokenization
-        token_indices = []
-        words = sentence.split()
-        
-        current_pos = prompt_len
-        for word in words:
-            # Get tokens for this word
-            word_ids = tokenizer.encode(word, add_special_tokens=False)
-            word_len = len(word_ids)
-            indices = list(range(current_pos, current_pos + word_len))
-            token_indices.append((word, indices))
-            
-            current_pos += word_len
+def encode_input(sentences: List[str], tokenizer: AutoTokenizer, task: str, relation_type: str = None):
 
-        all_token_indices.append(token_indices)
-    
-    return inputs, all_token_indices
+    if task == "task2":
+        sentences = [f"Instruction: {prompt_task2} Context: {sentence}" for sentence in sentences]
 
-def get_attention(model, encodings, decoding=True):
+    elif task == "task3":
+        if relation_type is None:
+            raise ValueError("Relation type must be provided for task3.")
+        sentences = [f"Question: {prompt_task3} {relation_type} Context: {sentence} Answer:" for sentence in sentences]
+
+    else:
+        raise ValueError(f"Invalid task: {task}. Choose from 'task2' or 'task3'.")
+     
+    sentence_words, sentence_tokens_per_word = [], []
+    
+    for sentence in sentences: 
+
+        wordlist = sentence.split()
+
+        # Encode each individual word
+        individual_tokens = tokenizer.batch_encode_plus(wordlist, add_special_tokens=False)['input_ids']
+        # Count how many tokens correspond to each word
+        tokens_per_word = list(len(item) for item in individual_tokens)
+        sentence_words.append(wordlist)
+        sentence_tokens_per_word.append(tokens_per_word)
+
+    # Encode all sentences together
+    batch_encodings = tokenizer(sentences, 
+                              return_tensors='pt', 
+                              padding=True,
+                              truncation=True,
+                              add_special_tokens=True)
+
+ 
+    return batch_encodings, sentence_words, sentence_tokens_per_word
+
+def get_attention(model, encodings):
 
     with torch.no_grad():
 
@@ -52,21 +48,8 @@ def get_attention(model, encodings, decoding=True):
         
         # Get attention from first pass
         attention = torch.stack(output.attentions)  # [num_layers, batch_size, num_heads, seq_len, seq_len]
-
-        if decoding:
-            # Generate one token for each sentence in batch #TODO: Change to generate multiple tokens
-            next_tokens = output.logits[:, -1, :].argmax(dim=-1).unsqueeze(-1)
-            
-            # Decode next tokens while reusing past key values
-            output = model(input_ids=next_tokens,
-                         past_key_values=output.past_key_values,
-                         output_attentions=True,
-                         use_cache=True)
-            
-            # Use attention from the decoding step
-            attention = torch.stack(output.attentions)  # [num_layers, batch_size, num_heads, 1, seq_len]
-        
-        return attention, next_tokens
+       
+    return attention
     
 def process_attention(word_mappings: List[List[List[int]]], attention: torch.Tensor) -> torch.Tensor:
     """
@@ -113,8 +96,9 @@ def process_attention(word_mappings: List[List[List[int]]], attention: torch.Ten
 
 if __name__ == "__main__":
 
-    model, tokenizer = load_llama()
-    prompt = prompt_task2
+    model_task2, tokenizer = load_llama(model_type = "causal")
+    #model_task3, tokenizer = load_llama(model_type = "qa")
+
     #save_model(model, tokenizer, "/scratch/7982399/hf_cache")
 
     sentences = [
@@ -122,18 +106,25 @@ if __name__ == "__main__":
         "She won a Novel Prize in 1911."
     ]
 
-    encodings, word_mappings, token_groups = encode_input(sentences, prompt, tokenizer)
 
-    print(word_mappings, "\n", token_groups)
+    encodings, wordlists, token_word_mappings = encode_input(sentences, tokenizer, "task2")
 
-    attention, _ = get_attention(model, encodings)
+    attention = get_attention(model_task2, encodings)
 
-    attention_processed = process_attention(word_mappings, attention)
+    torch.save(attention, "/scratch/7982399/thesis/outputs/attention_unprocessed.pt")
+
+    print(attention.shape)
+
+    # attention_processed = process_attention(word_mappings, attention)
 
     # # Exclude prompt tokens
     # prompt_len = len(prompt.split())
     # attention = attention[..., prompt_len:]
 
-    torch.save(attention, "/scratch/7982399/thesis/outputs/attention.pt")
+    # torch.save(attention, "/scratch/7982399/thesis/outputs/attention.pt")
 
-    print(attention_processed.shape)
+    # print(attention_processed.shape)
+
+    #TODO: be able to load attention tensor
+    #TODO: define relation types
+    #TODO: update averaging for square matrix
