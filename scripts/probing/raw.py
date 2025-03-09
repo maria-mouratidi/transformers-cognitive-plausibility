@@ -29,12 +29,22 @@ def encode_input(sentences: List[str], tokenizer: AutoTokenizer, task: str, rela
         sentence_words.append(wordlist)
         sentence_tokens_per_word.append(tokens_per_word)
 
+        # Decode individual tokens for comparison
+        decoded_individual_tokens = [tokenizer.decode(tokens) for tokens in individual_tokens]
+        print(f"Decoded Individual Tokens: {decoded_individual_tokens}\n\n")
+
     # Encode all sentences together
     batch_encodings = tokenizer(sentences, 
                               return_tensors='pt', 
                               padding=True,
-                              truncation=True,
+                              truncation=False,
                               add_special_tokens=True)
+    
+    # Decode batch tokens for comparison
+    batch_tokens = batch_encodings['input_ids']
+    decoded_batch_tokens = [[tokenizer.decode([token]) for token in tokens] for tokens in batch_tokens]
+    print(f"Decoded Batch Tokens: {decoded_batch_tokens}\n\n")
+
 
  
     return batch_encodings, sentence_words, sentence_tokens_per_word
@@ -57,10 +67,10 @@ def process_attention(word_mappings: List[List[List[int]]], attention: torch.Ten
 
     Args:
         word_mappings: List of token indices for each word in each sentence
-        attention: Attention tensor [num_layers, batch_size, num_heads, seq_len/1, seq_len]
+        attention: Attention tensor [num_layers, batch_size, num_heads, seq_len, seq_len]
     
     Returns:
-        Word attention tensor [num_layers, batch_size, num_heads, seq_len, max_length]
+        Word attention tensor [num_layers, batch_size, max_words]
     """
 
     num_layers, batch_size, num_heads, seq_len, _ = attention.shape
@@ -74,22 +84,28 @@ def process_attention(word_mappings: List[List[List[int]]], attention: torch.Ten
 
     # Loop through each sentence in batch
     for sentence_idx, word_map in enumerate(word_mappings):
-        for word_idx, (word, token_group) in enumerate(word_map):
+        token_pos = 0
+        for word_idx, num_tokens in enumerate(word_map):
             # Average token-level attentions for the word across all layers and heads
             word_attention = torch.zeros((num_layers, num_heads, seq_len), device=attention.device)
             
-            for token_idx in token_group:
+            for n_token in range(num_tokens):
+                token_idx = token_pos + n_token
+                continue
                 # Get attention for this token
                 token_attention = attention[:, sentence_idx, :, :, token_idx]
-                word_attention += token_attention
+                word_attention += token_attention #TODO: CHECK if this really sums the word-level values
+            token_pos += num_tokens
             
             # Average from all tokens
-            word_attention = word_attention / len(token_group)
+            word_attention = word_attention / num_tokens
             
             # Store at the word position
             word_attentions[:, sentence_idx, :, :, word_idx] = word_attention
 
-    head_average = word_attentions.mean(dim=2)  # [num_layers, batch_size, seq_len, max_length]
+    word_average = word_attentions.mean(dim=4)  # [num_layers, batch_size, num_heads, seq_len]
+
+    head_average = word_average.mean(dim=2)  # [num_layers, batch_size, seq_len, max_length]
     head_average = head_average.squeeze(2) # [num_layers, batch_size, max_words]
 
     return head_average
@@ -97,9 +113,9 @@ def process_attention(word_mappings: List[List[List[int]]], attention: torch.Ten
 if __name__ == "__main__":
 
     model_task2, tokenizer = load_llama(model_type = "causal")
-    #model_task3, tokenizer = load_llama(model_type = "qa")
+    # #model_task3, tokenizer = load_llama(model_type = "qa")
 
-    #save_model(model, tokenizer, "/scratch/7982399/hf_cache")
+    # #save_model(model, tokenizer, "/scratch/7982399/hf_cache")
 
     sentences = [
         "As a child, his hero was Batman, and as a teenager his interests shifted towards music.",
@@ -109,12 +125,25 @@ if __name__ == "__main__":
 
     encodings, wordlists, token_word_mappings = encode_input(sentences, tokenizer, "task2")
 
-    attention = get_attention(model_task2, encodings)
+    # attention = get_attention(model_task2, encodings)
 
-    torch.save(attention, "/scratch/7982399/thesis/outputs/attention_unprocessed.pt")
+    # torch.save({
+    #     'attention': attention,
+    #     'sentence_tokens_per_word': token_word_mappings,
+    #     'sentence_words': wordlists
+    # }, "/scratch/7982399/thesis/outputs/attention_data.pt")
 
-    print(attention.shape)
 
+    # # Load the saved dictionary
+    # loaded_data = torch.load("/scratch/7982399/thesis/outputs/attention_data.pt")
+
+    # # Extract each component
+    # attention = loaded_data['attention']
+    # word_mappings = loaded_data['sentence_tokens_per_word']
+    # sentence_words = loaded_data['sentence_words']
+
+    # print(attention.shape)
+    # print(word_mappings)
     # attention_processed = process_attention(word_mappings, attention)
 
     # # Exclude prompt tokens
