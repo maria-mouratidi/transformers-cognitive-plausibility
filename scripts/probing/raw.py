@@ -7,17 +7,17 @@ import re
 def encode_input(sentences: List[str], tokenizer: AutoTokenizer, task: str, relation_type: str = None):
 
     if task == "task2":
-        sentences = [f"Instruction: {prompt_task2} Context: {sentence}" for sentence in sentences]
+        sentences = [prompt_task2 + sentence for sentence in sentences]
 
     elif task == "task3":
         if relation_type is None:
             raise ValueError("Relation type must be provided for task3.")
-        sentences = [f"Question: {prompt_task3} {relation_type} Context: {sentence}" for sentence in sentences]
-
+        sentences = [prompt_task3 + relation_type + sentence for sentence in sentences]
+    
     else:
         raise ValueError(f"Invalid task: {task}. Choose from 'task2' or 'task3'.")
 
-    sentence_tokens_per_word = [], []
+    word_mappings = []
     # Pretokenize input to align with human data
     sentences = [re.sub(r'[^\w\s]', '', sentence) for sentence in sentences] # Remove punctuation
     sentences = [sentence.split() for sentence in sentences] # Split by whitespace
@@ -26,15 +26,15 @@ def encode_input(sentences: List[str], tokenizer: AutoTokenizer, task: str, rela
         # Encode using pretokenized input
         individual_tokens = tokenizer.batch_encode_plus(sentence, add_special_tokens=False)['input_ids']
         # Count how many tokens correspond to each word
-        tokens_per_word = list(len(item) for item in individual_tokens)
-        sentence_tokens_per_word.append(tokens_per_word)
+        mapping = [(word, len(item)) for word, item in zip(sentence, individual_tokens)]
+        word_mappings.append(mapping)
 
     batch_encodings = tokenizer(sentences, return_tensors='pt', is_split_into_words=True, padding=True, truncation=False, add_special_tokens=False) 
  
-    return batch_encodings, sentences, sentence_tokens_per_word
+    return batch_encodings, word_mappings, sentences
 
 
-def get_prompt_token_count(tokenizer, task, relation_type=None):
+def get_prompt_token_count(task, relation_type=None):
     """
     Count the number of tokens in the prompt prefix for a given task.
     
@@ -47,18 +47,15 @@ def get_prompt_token_count(tokenizer, task, relation_type=None):
         Number of tokens in the prompt
     """
     if task == "task2":
-        prompt_text = f"Instruction: {prompt_task2} Context: "
+        prompt_text = prompt_task2
     elif task == "task3":
-        prompt_text = f"Question: {prompt_task3} {relation_type} Context: "
+        prompt_text = prompt_task3 + relation_type
     else:
         raise ValueError(f"Invalid task: {task}")
     
-    prompt_text = re.sub(r'[^\w\s]', '', prompt_text) # Remove punctuation
-    prompt_text = prompt_text.split() # Split by whitespace
-
-    # Get tokens for just the prompt
-    tokens = tokenizer(prompt_text, add_special_tokens=False, is_split_into_words=True)['input_ids']
-    return len(tokens)
+    prompt_text = re.sub(r'[^\w\s]', '', prompt_text) # Remove punctuation same way as encode_input
+    prompt_words = prompt_text.split() # Split by whitespace
+    return len(prompt_words)
 
 def get_attention(model, encodings):
 
@@ -72,7 +69,7 @@ def get_attention(model, encodings):
        
     return attention
     
-def process_attention(attention: torch.Tensor, word_mappings: List[List[List[int]]]) -> torch.Tensor:
+def process_attention(attention: torch.Tensor, word_mappings: List[List[Tuple[str, int]]], prompt_word_count) -> torch.Tensor:
     """
     Extract word-level attention from token-level attention weights and average over heads.
 
@@ -94,18 +91,19 @@ def process_attention(attention: torch.Tensor, word_mappings: List[List[List[int
 
     # Loop through each sentence in batch
     for sentence_idx, word_map in enumerate(word_mappings):
-        token_pos = 0
 
-        for word_idx, num_tokens in enumerate(word_map):
+        for word_idx, (word, num_tokens) in enumerate(word_map):
             
             word_attention = torch.zeros((num_layers, num_heads, seq_len), device=attention.device)
             
             for n_token in range(num_tokens):
-                token_idx = token_pos + n_token
+
+                prev_tokens = word_map[:word_idx]
+                # Count tokens before this word to get the token index
+                token_idx = sum(token[1] for token in prev_tokens) + n_token
                 # Get attention for this token
                 token_attention = attention[:, sentence_idx, :, :, token_idx]
-                word_attention += token_attention #TODO: CHECK if this really sums the word-level values
-            token_pos += num_tokens
+                word_attention += token_attention
             
             # Average from all tokens
             word_attention = word_attention / num_tokens
@@ -117,31 +115,30 @@ def process_attention(attention: torch.Tensor, word_mappings: List[List[List[int
     head_average = word_average.mean(dim=2)  # [num_layers, batch_size, seq_len, max_words]
     head_average = head_average.squeeze(2) # [num_layers, batch_size, max_words]
 
-    return head_average
+    return head_average[:, :, prompt_word_count:]  # Remove prompt words
 
 
 if __name__ == "__main__":
 
-    task = "task2"
-    model, tokenizer = load_llama(task)
-    # #model_task3, tokenizer = load_llama(model_type = "qa")
+    # model_task2, tokenizer = load_llama(model_type="causal")
+    # # model_task3, tokenizer = load_llama(model_type = "qa")
 
 
-    # #save_model(model, tokenizer, "/scratch/7982399/hf_cache")
+    # save_model(model_task2, tokenizer, "/scratch/7982399/hf_cache")
 
     # sentences = [
     #     "As a child, his hero was Batman, and as a teenager his interests shifted towards music.",
     #     "She won a Novel Prize in 1911."
     # ]
 
-    # encodings, wordlists, token_word_mappings = encode_input(sentences, tokenizer, "task2")
+    # encodings, word_mappings, sentences = encode_input(sentences, tokenizer, "task2")
 
     # attention = get_attention(model_task2, encodings)
 
     # torch.save({
     #     'attention': attention,
-    #     'sentence_tokens_per_word': token_word_mappings,
-    #     'sentence_words': wordlists
+    #     'word_mappings': word_mappings,
+    #     'sentences': sentences
     # }, "/scratch/7982399/thesis/outputs/attention_data.pt")
 
 
@@ -150,16 +147,19 @@ if __name__ == "__main__":
 
     # Extract each component
     attention = loaded_data['attention']
-    word_mappings = loaded_data['sentence_tokens_per_word']
-    sentence_words = loaded_data['sentence_words']
+    word_mappings = loaded_data['word_mappings']
+    sentences = loaded_data['sentences']
 
     print("Attention tensor before preprocessing: ", attention.shape)
 
-    prompt_boundary = get_prompt_token_count(tokenizer, task)
-    attention_processed = process_attention(attention, word_mappings)
+    prompt_word_count = get_prompt_token_count("task2")
+    attention_processed = process_attention(attention, word_mappings, prompt_word_count)
     
     print("Attention tensor after preprocessing: ", attention_processed.shape)
+    print(sentences[0][prompt_word_count:])
+    print(attention_processed[0, 0, :])
+    print(len(sentences[0][prompt_word_count:]), attention_processed[0, 0, :].shape)
 
-    # torch.save(attention, "/scratch/7982399/thesis/outputs/attention.pt")
+    #torch.save(attention_processed, "/scratch/7982399/thesis/outputs/attention_processed.pt")
 
     #TODO: define relation types

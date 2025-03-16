@@ -1,12 +1,12 @@
 import torch
 import matplotlib.pyplot as plt
 import seaborn as sns
-import numpy as np
+from scripts.probing.raw import get_prompt_token_count
 import os
 
 save_dir = "/scratch/7982399/thesis/outputs/attention_plots"
 
-def plot_attention_heatmaps(attention_tensor, sequence, batch_idx=0, save_dir=None, layers_to_plot=None):
+def plot_attention_heatmaps(attention_tensor, sentence, batch_idx, save_dir=None, layers_to_plot=None):
     """
     Plot heatmaps for selected layers' attention weights for a given sentence in the batch and optionally save them.
     
@@ -19,7 +19,7 @@ def plot_attention_heatmaps(attention_tensor, sequence, batch_idx=0, save_dir=No
     """
     num_layers, batch_size, sent_len = attention_tensor.shape
     assert batch_idx < batch_size, f"Batch index {batch_idx} out of range for batch size {batch_size}"
-    assert len(sequence) == sent_len, f"Sequence length {len(sequence)} does not match sentence length {sent_len}"
+    assert len(sentence) == sent_len, f"Sentence length {len(sentence)} does not match attention's last dim {sent_len}"
     
     if layers_to_plot is None:
         layers_to_plot = [0, num_layers // 2, num_layers - 1]  # Default to first, middle, last layers
@@ -38,18 +38,29 @@ def plot_attention_heatmaps(attention_tensor, sequence, batch_idx=0, save_dir=No
     
     if save_dir:
         os.makedirs(save_dir, exist_ok=True)
-        save_path = os.path.join(save_dir, f'attention_batch_{batch_idx}.png')
+        save_path = os.path.join(save_dir, f'attention_processed_batch_{batch_idx}.png')
         plt.savefig(save_path)
         print(f"Saved heatmap to {save_path}")
     
     plt.show()
 
-attention_tensor = torch.load("/scratch/7982399/thesis/outputs/attention_tensor.pt")  # Load the attention tensor
-num_layers, batch_size, sent_len = attention_tensor.shape
-sentences = [
-        "As a child, his hero was Batman, and as a teenager his interests shifted towards music 0 0 0",
-        "She won a Novel Prize in 1911. 0 0 0 0 0 0 0 0 0 0 0 0 ",
-    ]
+def pad_lists(lists, max_sent_len, pad_value=""):
+    return [lst[:max_sent_len] + [pad_value] * (max_sent_len - len(lst)) for lst in lists]
+
+
+if __name__ == "__main__":
+
+    # Load processed attention tensor and sentences
+    attention_tensor = torch.load("/scratch/7982399/thesis/outputs/attention_processed.pt")  # Load the attention tensor
+    sentences = torch.load("/scratch/7982399/thesis/outputs/attention_data.pt")['sentences']
     
-for batch_idx in range(batch_size):
-    plot_attention_heatmaps(attention_tensor, sentences[batch_idx].split(), batch_idx=batch_idx, save_dir="/scratch/7982399/thesis/outputs/attention_plots")
+    num_layers, batch_size, max_sent_len = attention_tensor.shape
+    prompt_word_count = get_prompt_token_count("task2")
+    # Remove the prompt for proper plotting
+    sentences = [sentence[prompt_word_count:] for sentence in sentences]  # Remove prompt words
+    # Pad sentences to the same length for tensor alignment
+    sentences = pad_lists(sentences, max_sent_len)
+
+    # Loop through sentences in the batch and plot attention heatmaps
+    for batch_idx in range(batch_size):
+        plot_attention_heatmaps(attention_tensor, sentences[batch_idx], batch_idx=batch_idx, save_dir="/scratch/7982399/thesis/outputs/attention_plots")
