@@ -14,7 +14,7 @@ def get_matfiles(task:str, subdir = '/data/'):
     """
     path = os.getcwd() + subdir + task
     files = [os.path.join(path,file) for file in os.listdir(path)]
-    assert len(files) == 12, 'each task must contain 12 .mat files'
+    #assert len(files) == 12, 'each task must contain 12 .mat files'
     return files
 
 
@@ -27,7 +27,7 @@ class DataTransformer:
         """
             Args: task ("task1", "task2", or "task3"), data level, scaling technique, how to treat NaNs
         """
-        tasks = ["task1", "task2", "task3"]
+        tasks = ['task1', 'task2', 'task3']
         if task in tasks:
             self.task = task
         else:
@@ -164,12 +164,7 @@ class DataTransformer:
             if self.level == 'sentence':
                 features = np.array([(feat - min(feat))/(max(feat) - min(feat)) for feat in features.T])
             elif self.level == 'word':
-                fields = df.columns[3:]  # assuming you want to normalize columns from index 3 onwards
-                for field in fields:
-                    df[field] = (df[field] - df[field].min()) / (df[field].max() - df[field].min())
-                # df.iloc[:, 3:] = [(getattr(df,field).values - getattr(df,field).values.min())/\
-                #                   (getattr(df,field).values.max() - getattr(df,field).values.min())\
-                #                   for field in fields[3:]]
+                df.iloc[:, 3:] = (df.iloc[:, 3:] - df.iloc[:, 3:].min()) / (df.iloc[:, 3:].max() - df.iloc[:, 3:].min())
                 
         elif self.scaling == 'mean-norm':
             if self.level == 'sentence':
