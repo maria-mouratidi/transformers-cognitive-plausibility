@@ -4,23 +4,33 @@ from typing import List, Tuple, Dict
 from materials.prompts import prompt_task2, prompt_task3
 import re
 
-def encode_input(sentences: List[str], tokenizer: AutoTokenizer, task: str, relation_type: str = None):
-
+def encode_input(sentences: List[List[str]], tokenizer: AutoTokenizer, task: str, relation_type: str = None):
+    """
+    Encodes pretokenized input for model processing.
+    
+    Args:
+        sentences: List of pretokenized sentences (List[List[str]])
+        tokenizer: The tokenizer to use
+        task: The task type ('task2' or 'task3')
+        relation_type: Relation type for task3 (required if task is 'task3')
+        
+    Returns:
+        Tuple of (batch_encodings, word_mappings, number of prompt tokens)
+    """
     if task == "task2":
-        sentences = [prompt_task2 + sentence for sentence in sentences]
+        prompt_words = re.sub(r'[^\w\s]', '', prompt_task2).split()
+        sentences = [prompt_words + sentence for sentence in sentences]
 
     elif task == "task3":
         if relation_type is None:
             raise ValueError("Relation type must be provided for task3.")
-        sentences = [prompt_task3 + relation_type + sentence for sentence in sentences]
+        prompt_words = re.sub(r'[^\w\s]', '', prompt_task3 + relation_type).split()
+        sentences = [prompt_words + sentence for sentence in sentences]
     
     else:
         raise ValueError(f"Invalid task: {task}. Choose from 'task2' or 'task3'.")
 
     word_mappings = []
-    # Pretokenize input to align with human data
-    sentences = [re.sub(r'[^\w\s]', '', sentence) for sentence in sentences] # Remove punctuation
-    sentences = [sentence.split() for sentence in sentences] # Split by whitespace
 
     for sentence in sentences:
         # Encode using pretokenized input
@@ -31,31 +41,8 @@ def encode_input(sentences: List[str], tokenizer: AutoTokenizer, task: str, rela
 
     batch_encodings = tokenizer(sentences, return_tensors='pt', is_split_into_words=True, padding=True, truncation=False, add_special_tokens=False) 
  
-    return batch_encodings, word_mappings, sentences
+    return batch_encodings, word_mappings, len(prompt_words)
 
-
-def get_prompt_token_count(task, relation_type=None):
-    """
-    Count the number of tokens in the prompt prefix for a given task.
-    
-    Args:
-        tokenizer: The tokenizer to use
-        task: The task ("task2" or "task3")
-        relation_type: For task3, the relation type string
-        
-    Returns:
-        Number of tokens in the prompt
-    """
-    if task == "task2":
-        prompt_text = prompt_task2
-    elif task == "task3":
-        prompt_text = prompt_task3 + relation_type
-    else:
-        raise ValueError(f"Invalid task: {task}")
-    
-    prompt_text = re.sub(r'[^\w\s]', '', prompt_text) # Remove punctuation same way as encode_input
-    prompt_words = prompt_text.split() # Split by whitespace
-    return len(prompt_words)
 
 def get_attention(model, encodings):
 
@@ -69,13 +56,14 @@ def get_attention(model, encodings):
        
     return attention
     
-def process_attention(attention: torch.Tensor, word_mappings: List[List[Tuple[str, int]]], prompt_word_count) -> torch.Tensor:
+def process_attention(attention: torch.Tensor, word_mappings: List[List[Tuple[str, int]]], prompt_len) -> torch.Tensor:
     """
     Extract word-level attention from token-level attention weights and average over heads.
 
     Args:
         attention: Attention tensor [num_layers, batch_size, num_heads, seq_len, seq_len]
         word_mappings: List of token counts for each word in each sentence
+        prompt_len: Length of prompt, to know the number of tokens in the beginning to filter out
     Returns:
         Word attention tensor [num_layers, batch_size, max_words]
     """
@@ -115,7 +103,7 @@ def process_attention(attention: torch.Tensor, word_mappings: List[List[Tuple[st
     head_average = word_average.mean(dim=2)  # [num_layers, batch_size, seq_len, max_words]
     head_average = head_average.squeeze(2) # [num_layers, batch_size, max_words]
 
-    return head_average[:, :, prompt_word_count:]  # Remove prompt words
+    return head_average[:, :, prompt_len:]  # Remove prompt words
 
 
 if __name__ == "__main__":
@@ -131,14 +119,14 @@ if __name__ == "__main__":
     #     "She won a Novel Prize in 1911."
     # ]
 
-    # encodings, word_mappings, sentences = encode_input(sentences, tokenizer, "task2")
+    # encodings, word_mappings, prompt_len = encode_input(sentences, tokenizer, "task2")
 
     # attention = get_attention(model_task2, encodings)
 
     # torch.save({
     #     'attention': attention,
     #     'word_mappings': word_mappings,
-    #     'sentences': sentences
+    #     'prompt_len': prompt_len
     # }, "/scratch/7982399/thesis/outputs/attention_data.pt")
 
 
@@ -148,17 +136,17 @@ if __name__ == "__main__":
     # Extract each component
     attention = loaded_data['attention']
     word_mappings = loaded_data['word_mappings']
-    sentences = loaded_data['sentences']
+    prompt_len = loaded_data['prompt_len']
 
     print("Attention tensor before preprocessing: ", attention.shape)
 
-    prompt_word_count = get_prompt_token_count("task2")
-    attention_processed = process_attention(attention, word_mappings, prompt_word_count)
+
+    attention_processed = process_attention(attention, word_mappings, prompt_len)
     
     print("Attention tensor after preprocessing: ", attention_processed.shape)
-    print(sentences[0][prompt_word_count:])
+    print(sentences[0][prompt_len:])
     print(attention_processed[0, 0, :])
-    print(len(sentences[0][prompt_word_count:]), attention_processed[0, 0, :].shape)
+    print(len(sentences[0][prompt_len:]), attention_processed[0, 0, :].shape)
 
     #torch.save(attention_processed, "/scratch/7982399/thesis/outputs/attention_processed.pt")
 
