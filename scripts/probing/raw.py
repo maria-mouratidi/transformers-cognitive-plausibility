@@ -3,6 +3,7 @@ from scripts.probing.load_model import *
 from typing import List, Tuple, Dict
 from materials.prompts import prompt_task2, prompt_task3
 import re
+import pandas as pd
 
 def encode_input(sentences: List[List[str]], tokenizer: AutoTokenizer, task: str, relation_type: str = None):
     """
@@ -33,13 +34,18 @@ def encode_input(sentences: List[List[str]], tokenizer: AutoTokenizer, task: str
     word_mappings = []
 
     for sentence in sentences:
+        print(sentence)
         # Encode using pretokenized input
-        individual_tokens = tokenizer.batch_encode_plus(sentence, add_special_tokens=False)['input_ids']
+        encodings = tokenizer.batch_encode_plus(sentence, is_split_into_words=False, add_special_tokens=False)['input_ids']
         # Count how many tokens correspond to each word
-        mapping = [(word, len(item)) for word, item in zip(sentence, individual_tokens)]
+        print(encodings)
+        mapping = [(word, len(item)) for word, item in zip(sentence, encodings)]
         word_mappings.append(mapping)
 
-    batch_encodings = tokenizer(sentences, return_tensors='pt', is_split_into_words=True, padding=True, truncation=False, add_special_tokens=False) 
+    # Convert sentences to simple strings for the tokenizer
+    text_sentences = [" ".join(sentence) for sentence in sentences]
+
+    batch_encodings = tokenizer(text_sentences, return_tensors='pt', is_split_into_words=False, padding=True, truncation=False, add_special_tokens=False) 
  
     return batch_encodings, word_mappings, len(prompt_words)
 
@@ -108,45 +114,46 @@ def process_attention(attention: torch.Tensor, word_mappings: List[List[Tuple[st
 
 if __name__ == "__main__":
 
-    # model_task2, tokenizer = load_llama(model_type="causal")
+    model_task2, tokenizer = load_llama(model_type="causal")
     # # model_task3, tokenizer = load_llama(model_type = "qa")
-
 
     # save_model(model_task2, tokenizer, "/scratch/7982399/hf_cache")
 
-    # sentences = [
-    #     "As a child, his hero was Batman, and as a teenager his interests shifted towards music.",
-    #     "She won a Novel Prize in 1911."
-    # ]
+    df = pd.read_csv('data/task2/processed/all_participants.csv')
 
-    # encodings, word_mappings, prompt_len = encode_input(sentences, tokenizer, "task2")
+    # Extract sentences as lists of strings, ensuring each sentence appears only once
+    unique_words = df[['Sent_ID', 'Word_ID', 'Word']].drop_duplicates()
 
-    # attention = get_attention(model_task2, encodings)
+    # Group by Sent_ID to get list of words for each sentence
+    sentences = unique_words.groupby('Sent_ID')['Word'].apply(list).tolist()
 
-    # torch.save({
-    #     'attention': attention,
-    #     'word_mappings': word_mappings,
-    #     'prompt_len': prompt_len
-    # }, "/scratch/7982399/thesis/outputs/attention_data.pt")
+    encodings, word_mappings, prompt_len = encode_input(sentences, tokenizer, "task2")
 
+    attention = get_attention(model_task2, encodings)
 
-    # Load the saved dictionary
-    loaded_data = torch.load("/scratch/7982399/thesis/outputs/attention_data.pt")
-
-    # Extract each component
-    attention = loaded_data['attention']
-    word_mappings = loaded_data['word_mappings']
-    prompt_len = loaded_data['prompt_len']
-
-    print("Attention tensor before preprocessing: ", attention.shape)
+    torch.save({
+        'attention': attention,
+        'word_mappings': word_mappings,
+        'prompt_len': prompt_len
+    }, "/scratch/7982399/thesis/outputs/attention_data.pt")
 
 
-    attention_processed = process_attention(attention, word_mappings, prompt_len)
+    # # Load the saved dictionary
+    # loaded_data = torch.load("/scratch/7982399/thesis/outputs/attention_data.pt")
+
+    # # Extract each component
+    # attention = loaded_data['attention']
+    # word_mappings = loaded_data['word_mappings']
+    # prompt_len = loaded_data['prompt_len']
+
+    # print("Attention tensor before preprocessing: ", attention.shape)
+
+    # attention_processed = process_attention(attention, word_mappings, prompt_len)
     
-    print("Attention tensor after preprocessing: ", attention_processed.shape)
-    print(sentences[0][prompt_len:])
-    print(attention_processed[0, 0, :])
-    print(len(sentences[0][prompt_len:]), attention_processed[0, 0, :].shape)
+    # print("Attention tensor after preprocessing: ", attention_processed.shape)
+    # print(sentences[0][prompt_len:])
+    # print(attention_processed[0, 0, :])
+    # print(len(sentences[0][prompt_len:]), attention_processed[0, 0, :].shape)
 
     #torch.save(attention_processed, "/scratch/7982399/thesis/outputs/attention_processed.pt")
 
