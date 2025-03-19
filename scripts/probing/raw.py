@@ -32,21 +32,45 @@ def encode_input(sentences: List[List[str]], tokenizer: AutoTokenizer, task: str
     else:
         raise ValueError(f"Invalid task: {task}. Choose from 'task2' or 'task3'.")
 
+    batch_encodings = []
     word_mappings = []
-
+    
     for sentence in sentences:
-        # Encode using pretokenized input
-        encodings = tokenizer.batch_encode_plus(sentence, is_split_into_words=False, add_special_tokens=False)['input_ids']
-        # Count how many tokens correspond to each word
-        mapping = [(word, len(item)) for word, item in zip(sentence, encodings)]
-        word_mappings.append(mapping)
-
-    # Convert sentences to simple strings for the tokenizer
-    text_sentences = [" ".join(sentence) for sentence in sentences]
-
-    batch_encodings = tokenizer(text_sentences, return_tensors='pt', is_split_into_words=False, padding=True, truncation=False, add_special_tokens=False) 
- 
-    return batch_encodings, word_mappings, len(prompt_words)
+        # Track word to token mapping
+        word_to_tokens = []
+        all_tokens = []
+        
+        # Process each word individually
+        for word in sentence:
+            # Get tokens for this word
+            word_tokens = tokenizer.encode(word, add_special_tokens=False)
+            # Store the mapping (word, token_count)
+            word_to_tokens.append((word, len(word_tokens)))
+            # Add these tokens to our running list
+            all_tokens.extend(word_tokens)
+        
+        # Store the mapping for this sentence
+        word_mappings.append(word_to_tokens)
+        # Store the complete token sequence for this sentence
+        batch_encodings.append(all_tokens)
+    
+    # Pad sequences to the same length
+    max_length = max(len(tokens) for tokens in batch_encodings)
+    padded_encodings = [tokens + [tokenizer.pad_token_id] * (max_length - len(tokens)) 
+                        for tokens in batch_encodings]
+    
+    # Convert to tensors
+    input_ids = torch.tensor(padded_encodings)
+    attention_mask = torch.tensor([[1] * len(tokens) + [0] * (max_length - len(tokens)) 
+                                   for tokens in batch_encodings])
+    
+    # Create the encodings dictionary
+    encodings = {
+        'input_ids': input_ids,
+        'attention_mask': attention_mask
+    }
+    
+    return encodings, word_mappings, len(prompt_words)
 
 
 def get_attention(model, encodings):
