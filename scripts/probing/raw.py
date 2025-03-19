@@ -4,6 +4,7 @@ from typing import List, Tuple, Dict
 from materials.prompts import prompt_task2, prompt_task3
 import re
 import pandas as pd
+import json
 
 def encode_input(sentences: List[List[str]], tokenizer: AutoTokenizer, task: str, relation_type: str = None):
     """
@@ -34,11 +35,9 @@ def encode_input(sentences: List[List[str]], tokenizer: AutoTokenizer, task: str
     word_mappings = []
 
     for sentence in sentences:
-        print(sentence)
         # Encode using pretokenized input
         encodings = tokenizer.batch_encode_plus(sentence, is_split_into_words=False, add_special_tokens=False)['input_ids']
         # Count how many tokens correspond to each word
-        print(encodings)
         mapping = [(word, len(item)) for word, item in zip(sentence, encodings)]
         word_mappings.append(mapping)
 
@@ -52,7 +51,13 @@ def encode_input(sentences: List[List[str]], tokenizer: AutoTokenizer, task: str
 
 def get_attention(model, encodings):
 
-    with torch.no_grad():
+    device = next(model.parameters()).device
+    encodings = {k: v.to(device) for k, v in encodings.items()}
+
+    if hasattr(torch, 'compile') and device == 'cuda':
+        model = torch.compile(model)
+
+    with torch.inference_mode():
 
         # First forward pass with input prompt
         output = model(**encodings, output_attentions=True, use_cache=True)
@@ -62,7 +67,7 @@ def get_attention(model, encodings):
        
     return attention
     
-def process_attention(attention: torch.Tensor, word_mappings: List[List[Tuple[str, int]]], prompt_len) -> torch.Tensor:
+def process_attention(sentences, attention: torch.Tensor, word_mappings: List[List[Tuple[str, int]]], prompt_len) -> torch.Tensor:
     """
     Extract word-level attention from token-level attention weights and average over heads.
 
@@ -79,6 +84,7 @@ def process_attention(attention: torch.Tensor, word_mappings: List[List[Tuple[st
     
     # Get maximum number of words across all sentences
     max_words = max(len(word_map) for word_map in word_mappings)
+    
 
     # Initialize word-level attention tensor
     word_attentions = torch.zeros((num_layers, batch_size, num_heads, seq_len, max_words), device=device)
@@ -96,7 +102,15 @@ def process_attention(attention: torch.Tensor, word_mappings: List[List[Tuple[st
                 # Count tokens before this word to get the token index
                 token_idx = sum(token[1] for token in prev_tokens) + n_token
                 # Get attention for this token
-                token_attention = attention[:, sentence_idx, :, :, token_idx]
+                try:
+                    token_attention = attention[:, sentence_idx, :, :, token_idx]
+                except IndexError as e:
+                    print(f"Num of words: {len(word_map)} Num of tokens: {sum(token[1] for token in word_map)}")
+                    print(f"Sent {sentence_idx}, Word {word_idx}, Token {n_token}, Idx {token_idx}")
+                    print(word_map[word_idx])
+                    print(word_map)
+                    print(e) # attention tensor and wordmaps mismatch #attention tensor is shorter
+                    return 0
                 word_attention += token_attention
             
             # Average from all tokens
@@ -114,43 +128,42 @@ def process_attention(attention: torch.Tensor, word_mappings: List[List[Tuple[st
 
 if __name__ == "__main__":
 
-    model_task2, tokenizer = load_llama(model_type="causal")
+    # model_task2, tokenizer = load_llama(model_type="causal")
     # # model_task3, tokenizer = load_llama(model_type = "qa")
 
     # save_model(model_task2, tokenizer, "/scratch/7982399/hf_cache")
 
-    df = pd.read_csv('data/task2/processed/all_participants.csv')
+    # Load the sentences
+    with open('materials/sentences.json', 'r') as f:
+        sentences = json.load(f)
 
-    # Extract sentences as lists of strings, ensuring each sentence appears only once
-    unique_words = df[['Sent_ID', 'Word_ID', 'Word']].drop_duplicates()
-
-    # Group by Sent_ID to get list of words for each sentence
-    sentences = unique_words.groupby('Sent_ID')['Word'].apply(list).tolist()
-
-    encodings, word_mappings, prompt_len = encode_input(sentences, tokenizer, "task2")
-
-    attention = get_attention(model_task2, encodings)
-
-    torch.save({
-        'attention': attention,
-        'word_mappings': word_mappings,
-        'prompt_len': prompt_len
-    }, "/scratch/7982399/thesis/outputs/attention_data.pt")
+    sentences = sentences[:5]
 
 
-    # # Load the saved dictionary
-    # loaded_data = torch.load("/scratch/7982399/thesis/outputs/attention_data.pt")
+    # encodings, word_mappings, prompt_len = encode_input(sentences, tokenizer, "task2")
 
-    # # Extract each component
-    # attention = loaded_data['attention']
-    # word_mappings = loaded_data['word_mappings']
-    # prompt_len = loaded_data['prompt_len']
+    # attention = get_attention(model_task2, encodings)
 
-    # print("Attention tensor before preprocessing: ", attention.shape)
+    # torch.save({
+    #     'attention': attention,
+    #     'word_mappings': word_mappings,
+    #     'prompt_len': prompt_len
+    # }, "/scratch/7982399/thesis/outputs/attention_data.pt")
 
-    # attention_processed = process_attention(attention, word_mappings, prompt_len)
+
+    # Load the saved dictionary
+    loaded_data = torch.load("/scratch/7982399/thesis/outputs/attention_data.pt")
+
+    # Extract each component
+    attention = loaded_data['attention']
+    word_mappings = loaded_data['word_mappings']
+    prompt_len = loaded_data['prompt_len']
+
+    print("Attention tensor before preprocessing: ", attention.shape)
+
+    attention_processed = process_attention(sentences, attention, word_mappings, prompt_len)
     
-    # print("Attention tensor after preprocessing: ", attention_processed.shape)
+    print("Attention tensor after preprocessing: ", attention_processed.shape)
     # print(sentences[0][prompt_len:])
     # print(attention_processed[0, 0, :])
     # print(len(sentences[0][prompt_len:]), attention_processed[0, 0, :].shape)
@@ -158,3 +171,4 @@ if __name__ == "__main__":
     #torch.save(attention_processed, "/scratch/7982399/thesis/outputs/attention_processed.pt")
 
     #TODO: define relation types
+    #TODO: take max instead of average attention from subwords

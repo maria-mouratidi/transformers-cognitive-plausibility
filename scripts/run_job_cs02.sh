@@ -17,7 +17,7 @@ mkdir -p "$OUTPUT_DIR" "$ERROR_DIR"
 # Run Python script with logs in categorized directories
 OUTPUT_LOG="$OUTPUT_DIR/output_$(date +"%d-%H:%M:%S").log"
 ERROR_LOG="$ERROR_DIR/error_$(date +"%d-%H:%M:%S").log"
-python -u /scratch/7982399/thesis/scripts/probing/raw.py > "$OUTPUT_LOG" 2> "$ERROR_LOG"
+python -m scripts.probing.raw > "$OUTPUT_LOG" 2> "$ERROR_LOG"
 
 # Remove log files if they are empty
 [ ! -s "$OUTPUT_LOG" ] && rm "$OUTPUT_LOG"

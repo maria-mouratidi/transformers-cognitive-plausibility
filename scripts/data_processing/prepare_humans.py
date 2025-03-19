@@ -1,4 +1,6 @@
 import pandas as pd
+import math
+import json
 
 # Load CSV
 df = pd.read_csv('data/task2/processed/all_participants.csv')
@@ -25,6 +27,11 @@ unique_words = df[['Sent_ID', 'Word_ID', 'Word']].drop_duplicates().sort_values(
 
 # Group by Sent_ID to get list of words for each sentence
 sentences = unique_words.groupby('Sent_ID')['Word'].apply(list).tolist()
+# Clean nan values
+sentences = [[word for word in sentence if not (isinstance(word, float) and math.isnan(word))] for sentence in sentences]
+# Save the cleaned sentences to a JSON file
+with open('materials/sentences.json', 'w') as f:
+    json.dump(sentences, f, indent=4)
 
 # Define eye-tracking features
 features = ['nFixations', 'meanPupilSize', 'GD', 'TRT', 'FFD', 'SFD', 'GPT', 'WordLen']
@@ -34,5 +41,5 @@ agg_df = df.groupby(['Sent_ID', 'Word_ID', 'Word'])[features].mean().reset_index
 
 agg_df.to_csv('data/task2/processed/averaged_participants.csv', index=False)
 
-# Optional: if you want to keep it sentence-level as well
-grouped_features = agg_df.groupby('Sent_ID')
+# # Optional: if you want to keep it sentence-level as well
+# grouped_features = agg_df.groupby('Sent_ID')
