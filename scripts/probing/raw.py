@@ -91,7 +91,7 @@ def get_attention(model, encodings):
        
     return attention
     
-def process_attention(sentences, attention: torch.Tensor, word_mappings: List[List[Tuple[str, int]]], prompt_len) -> torch.Tensor:
+def process_attention(attention: torch.Tensor, word_mappings: List[List[Tuple[str, int]]], prompt_len) -> torch.Tensor:
     """
     Extract word-level attention from token-level attention weights and average over heads.
 
@@ -108,7 +108,6 @@ def process_attention(sentences, attention: torch.Tensor, word_mappings: List[Li
     
     # Get maximum number of words across all sentences
     max_words = max(len(word_map) for word_map in word_mappings)
-    
 
     # Initialize word-level attention tensor
     word_attentions = torch.zeros((num_layers, batch_size, num_heads, seq_len, max_words), device=device)
@@ -126,15 +125,8 @@ def process_attention(sentences, attention: torch.Tensor, word_mappings: List[Li
                 # Count tokens before this word to get the token index
                 token_idx = sum(token[1] for token in prev_tokens) + n_token
                 # Get attention for this token
-                try:
-                    token_attention = attention[:, sentence_idx, :, :, token_idx]
-                except IndexError as e:
-                    print(f"Num of words: {len(word_map)} Num of tokens: {sum(token[1] for token in word_map)}")
-                    print(f"Sent {sentence_idx}, Word {word_idx}, Token {n_token}, Idx {token_idx}")
-                    print(word_map[word_idx])
-                    print(word_map)
-                    print(e) # attention tensor and wordmaps mismatch #attention tensor is shorter
-                    return 0
+                token_attention = attention[:, sentence_idx, :, :, token_idx]
+ 
                 word_attention += token_attention
             
             # Average from all tokens
@@ -163,7 +155,6 @@ if __name__ == "__main__":
 
     sentences = sentences[:5]
 
-
     # encodings, word_mappings, prompt_len = encode_input(sentences, tokenizer, "task2")
 
     # attention = get_attention(model_task2, encodings)
@@ -173,7 +164,6 @@ if __name__ == "__main__":
     #     'word_mappings': word_mappings,
     #     'prompt_len': prompt_len
     # }, "/scratch/7982399/thesis/outputs/attention_data.pt")
-
 
     # Load the saved dictionary
     loaded_data = torch.load("/scratch/7982399/thesis/outputs/attention_data.pt")
@@ -185,14 +175,15 @@ if __name__ == "__main__":
 
     print("Attention tensor before preprocessing: ", attention.shape)
 
-    attention_processed = process_attention(sentences, attention, word_mappings, prompt_len)
+    attention_processed = process_attention(attention, word_mappings, prompt_len)
     
     print("Attention tensor after preprocessing: ", attention_processed.shape)
-    # print(sentences[0][prompt_len:])
-    # print(attention_processed[0, 0, :])
-    # print(len(sentences[0][prompt_len:]), attention_processed[0, 0, :].shape)
-
-    #torch.save(attention_processed, "/scratch/7982399/thesis/outputs/attention_processed.pt")
+    
+    torch.save({
+        'attention_processed': attention_processed,
+        'word_mappings': word_mappings,
+        'prompt_len': prompt_len
+    }, "/scratch/7982399/thesis/outputs/attention_processed.pt")
 
     #TODO: define relation types
     #TODO: take max instead of average attention from subwords
