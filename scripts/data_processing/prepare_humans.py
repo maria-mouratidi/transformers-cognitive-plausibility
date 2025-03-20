@@ -22,6 +22,12 @@ def adjust_sent_id_p11(sent_id):
 
 df.loc[df['participantID'] == 11, 'Sent_ID'] = df.loc[df['participantID'] == 11, 'Sent_ID'].apply(adjust_sent_id_p11)
 
+# Remove '_NR' and convert Sent_ID to int
+df['Sent_ID'] = df['Sent_ID'].apply(lambda x: int(x.split('_')[0]))
+
+# Sort by Sent_ID (optional but recommended if you want them ordered)
+df = df.sort_values(by=['Sent_ID', 'Word_ID'])
+
 # Get unique combinations of Sent_ID and Word_ID with their corresponding words
 unique_words = df[['Sent_ID', 'Word_ID', 'Word']].drop_duplicates().sort_values(['Sent_ID', 'Word_ID'])
 

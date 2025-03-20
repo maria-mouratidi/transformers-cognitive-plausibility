@@ -36,11 +36,11 @@ def plot_attention_heatmaps(attention_tensor, sentence, batch_idx, save_dir=None
         sns.heatmap(attention_weights, ax=axes[i], cmap='Reds', cbar=True, xticklabels=sentence, yticklabels=[f'Layer {layer+1}'], linewidths=0.5, linecolor='black')
         axes[i].set_xlabel('Word Position')
 
-    plt.suptitle(f'Attention Weights for Batch {batch_idx}', fontsize=14)
+    plt.suptitle(f'Attention Weights', fontsize=14)
     
     if save_dir:
         os.makedirs(save_dir, exist_ok=True)
-        save_path = os.path.join(save_dir, f'attention_processed_batch_{batch_idx}.png')
+        save_path = os.path.join(save_dir, f'model_attn_sent{batch_idx}.png')
         plt.savefig(save_path)
         print(f"Saved heatmap to {save_path}")
     
