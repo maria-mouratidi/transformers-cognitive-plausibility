@@ -3,8 +3,10 @@ from scripts.probing.load_model import *
 from typing import List, Tuple, Dict
 from materials.prompts import prompt_task2, prompt_task3
 import re
-import pandas as pd
 import json
+
+subset = 5
+print("Using a subset of the data for testing: ", subset)
 
 def encode_input(sentences: List[List[str]], tokenizer: AutoTokenizer, task: str, relation_type: str = None):
     """
@@ -144,7 +146,7 @@ def process_attention(attention: torch.Tensor, word_mappings: List[List[Tuple[st
 
 if __name__ == "__main__":
 
-    # model_task2, tokenizer = load_llama(model_type="causal")
+    model_task2, tokenizer = load_llama(model_type="causal")
     # # model_task3, tokenizer = load_llama(model_type = "qa")
 
     # save_model(model_task2, tokenizer, "/scratch/7982399/hf_cache")
@@ -153,7 +155,8 @@ if __name__ == "__main__":
     with open('materials/sentences.json', 'r') as f:
         sentences = json.load(f)
 
-    sentences = sentences[:5]
+    # Subset for testing
+    sentences = sentences[:subset]
 
     # encodings, word_mappings, prompt_len = encode_input(sentences, tokenizer, "task2")
 

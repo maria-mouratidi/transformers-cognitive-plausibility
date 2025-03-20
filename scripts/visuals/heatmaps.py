@@ -2,6 +2,7 @@ import torch
 import matplotlib.pyplot as plt
 import seaborn as sns
 import os
+from scripts.probing.raw import subset
 
 save_dir = "/scratch/7982399/thesis/outputs/attention_plots"
 
@@ -59,7 +60,7 @@ if __name__ == "__main__":
     with open('materials/sentences.json', 'r') as f:
         sentences = json.load(f)
 
-    sentences = sentences[:5]
+    sentences = sentences[:subset]
     num_layers, batch_size, max_sent_len = attention.shape
     #sentences = pad_lists(sentences, max_sent_len)
     # Loop through sentences in the batch and plot attention heatmaps
