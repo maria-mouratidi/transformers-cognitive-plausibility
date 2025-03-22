@@ -7,10 +7,10 @@ from scripts.visuals.eda import plot_hist_kde_box
 from scripts.visuals.normality_test import shapiro_test
 from scripts.visuals.corr_plots import plot_regplots, plot_corr_heatmap
 
-FEATURES = ['nFixations', 'meanPupilSize', 'GD', 'TRT', 'FFD', 'SFD', 'GPT', 'WordLen']
+FEATURES = ['nFixations', 'meanPupilSize', 'GD', 'TRT', 'FFD', 'SFD', 'GPT']
 
 def load_processed_data():
-    human_df = pd.read_csv('data/task2/processed/averaged_participants.csv')
+    human_df = pd.read_csv('data/task2/processed/processed_participants.csv')
     human_df = human_df[human_df['Sent_ID'] < subset]  # Subset
     model_data = torch.load("/scratch/7982399/thesis/outputs/attention_processed.pt")
     attention = model_data['attention_processed']
@@ -77,7 +77,14 @@ def main():
     attention_nonpadded = attention_flat[:, token_indices]
     results_df = correlation_analysis(attention_nonpadded, human_df)
     
-    print(results_df)
+    # Filter significant results
+    significance_threshold = 0.05
+    significant_results = results_df[
+        (results_df['pearson_p_value'] < significance_threshold) |
+        (results_df['spearman_p_value'] < significance_threshold)
+    ]
+    
+    print(significant_results)
 
 if __name__ == "__main__":
     main()
