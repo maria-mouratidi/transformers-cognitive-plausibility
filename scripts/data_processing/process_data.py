@@ -35,24 +35,30 @@ df['Sent_ID'] = df['Sent_ID'].apply(lambda x: int(x.split('_')[0]))
 # Sort by Sent_ID (optional but recommended if you want them ordered)
 df = df.sort_values(by=['Sent_ID', 'Word_ID'])
 
+# Define eye-tracking features
+features = ['nFixations', 'meanPupilSize', 'GD', 'TRT', 'FFD', 'SFD', 'GPT']
+
+# Group by Sent_ID and participantID to calculate sentence-level sums
+sentence_sums = df.groupby(['Sent_ID', 'participantID'])[features].transform('sum')
+
+# Normalize each feature by dividing by the sentence-level sum
+for feature in features:
+    df[feature] = df[feature] / sentence_sums[feature]
+
 # Get unique combinations of Sent_ID and Word_ID with their corresponding words
 sentence_items = df[['Sent_ID', 'Word_ID', 'Word']].drop_duplicates()
 
 # Group by Sent_ID to get list of words for each sentence
 sentences = sentence_items.groupby('Sent_ID')['Word'].apply(list).tolist()
+
 # Clean nan values
 sentences = [[word for word in sentence if pd.notnull(word)] for sentence in sentences]
+
 # Save the cleaned sentences to a JSON file
 with open('materials/sentences.json', 'w') as f:
     json.dump(sentences, f, indent=4)
 
-# Define eye-tracking features
-features = ['nFixations', 'meanPupilSize', 'GD', 'TRT', 'FFD', 'SFD', 'GPT', 'WordLen']
-
 # Group by Sent_ID and Word_ID to average across participants
 agg_df = df.groupby(['Sent_ID', 'Word_ID', 'Word'])[features].mean().reset_index()
 
-agg_df.to_csv('data/task2/processed/averaged_participants.csv', index=False)
-
-# # Optional: if you want to keep it sentence-level as well
-# grouped_features = agg_df.groupby('Sent_ID')
+agg_df.to_csv('data/task2/processed/processed_participants.csv', index=False)

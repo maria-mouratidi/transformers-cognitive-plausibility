@@ -1,5 +1,7 @@
 # Ignore data directories
 /data/
+!/data/task2/processed
+!/data/task3/processed
 /results/
 
 # Python
