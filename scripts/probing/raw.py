@@ -104,59 +104,53 @@ def process_attention(attention: torch.Tensor, word_mappings: List[List[Tuple[st
     Returns:
         Word attention tensor [num_layers, batch_size, max_words]
     """
-
     num_layers, batch_size, num_heads, seq_len, _ = attention.shape
     device = attention.device
-    
+
     # Get maximum number of words across all sentences
     max_words = max(len(word_map) for word_map in word_mappings)
-
     # Initialize word-level attention tensor
     word_attentions = torch.zeros((num_layers, batch_size, num_heads, seq_len, max_words), device=device)
-
+    
     # Loop through each sentence in batch
     for sentence_idx, word_map in enumerate(word_mappings):
-
         for word_idx, (word, num_tokens) in enumerate(word_map):
-            
             word_attention = torch.zeros((num_layers, num_heads, seq_len), device=attention.device)
             
             for n_token in range(num_tokens):
-
                 prev_tokens = word_map[:word_idx]
                 # Count tokens before this word to get the token index
                 token_idx = sum(token[1] for token in prev_tokens) + n_token
                 # Get attention for this token
                 token_attention = attention[:, sentence_idx, :, :, token_idx]
- 
                 word_attention += token_attention
-            
             # Average from all tokens
             word_attention = word_attention / num_tokens
-            
             # Store at the word position
             word_attentions[:, sentence_idx, :, :, word_idx] = word_attention
 
     word_average = word_attentions.mean(dim=3)  # [num_layers, batch_size, num_heads, max_words]
     head_average = word_average.mean(dim=2)  # [num_layers, batch_size, seq_len, max_words]
     head_average = head_average.squeeze(2) # [num_layers, batch_size, max_words]
+    
+     # Normalize attention such that word attentions sum up to 1 in each sentence
+    attention_sum = head_average.sum(dim=2, keepdim=True)  # Sum over words
+    normalized_attention = head_average / (attention_sum + 1e-8)  # Add epsilon to avoid division by zero
 
-    return head_average[:, :, prompt_len:]  # Remove prompt words
+    return normalized_attention[:, :, prompt_len:]  # Remove prompt words
 
 
 if __name__ == "__main__":
 
     model_task2, tokenizer = load_llama(model_type="causal")
     # # model_task3, tokenizer = load_llama(model_type = "qa")
-
     # save_model(model_task2, tokenizer, "/scratch/7982399/hf_cache")
 
-    # Load the sentences
-    with open('materials/sentences.json', 'r') as f:
-        sentences = json.load(f)
-
-    # Subset for testing
-    sentences = sentences[:subset]
+    # # Load the sentences
+    # with open('materials/sentences.json', 'r') as f:
+    #     sentences = json.load(f)
+    # # Subset for testing
+    # sentences = sentences[:subset]
 
     # encodings, word_mappings, prompt_len = encode_input(sentences, tokenizer, "task2")
 
@@ -176,11 +170,9 @@ if __name__ == "__main__":
     word_mappings = loaded_data['word_mappings']
     prompt_len = loaded_data['prompt_len']
 
-    print("Attention tensor before preprocessing: ", attention.shape)
 
     attention_processed = process_attention(attention, word_mappings, prompt_len)
-    
-    print("Attention tensor after preprocessing: ", attention_processed.shape)
+    print("Shape: ", attention_processed.shape)
     
     torch.save({
         'attention_processed': attention_processed,

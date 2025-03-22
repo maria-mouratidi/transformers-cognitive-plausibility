@@ -1,11 +1,11 @@
 import numpy as np
 import pandas as pd
-from scipy.stats import pearsonr
+from scipy.stats import pearsonr, spearmanr
 import torch
 from scripts.probing.raw import subset
-from visuals.eda import plot_hist_kde_box
-from visuals.normality_test import shapiro_test
-from visuals.corr_plots import plot_regplots, plot_corr_heatmap
+from scripts.visuals.eda import plot_hist_kde_box
+from scripts.visuals.normality_test import shapiro_test
+from scripts.visuals.corr_plots import plot_regplots, plot_corr_heatmap
 
 FEATURES = ['nFixations', 'meanPupilSize', 'GD', 'TRT', 'FFD', 'SFD', 'GPT', 'WordLen']
 
@@ -30,11 +30,11 @@ def extract_layer_attention(attention, token_indices, layer_idx):
     layer_attention = attention_flat[layer_idx, token_indices].numpy()
     return attention_flat, layer_attention
 
-def exploratory_analysis(human_df, layer_attention_values, layer_idx):
-    plot_hist_kde_box(human_df, layer_attention_values, FEATURES, layer_idx)
+def exploratory_analysis(human_df, layer_attention_values, layer_idx, save_dir=None):
+    plot_hist_kde_box(human_df, layer_attention_values, FEATURES, layer_idx, save_dir)
     shapiro_test(human_df, layer_attention_values, FEATURES, layer_idx)
-    plot_regplots(human_df, layer_attention_values, FEATURES, layer_idx)
-    plot_corr_heatmap(human_df, layer_attention_values, FEATURES, layer_idx)
+    plot_regplots(human_df, layer_attention_values, FEATURES, layer_idx, save_dir)
+    plot_corr_heatmap(human_df, layer_attention_values, FEATURES, layer_idx, save_dir)
 
 def correlation_analysis(attention_nonpadded, human_df):
     feature_matrix = human_df[FEATURES].to_numpy()
@@ -44,14 +44,20 @@ def correlation_analysis(attention_nonpadded, human_df):
         for feature_idx, feature_name in enumerate(FEATURES):
             human_feature_values = feature_matrix[:, feature_idx]
             if len(attention_values) > 1:
-                r_value, p_value = pearsonr(attention_values, human_feature_values)
+                # Pearson's correlation
+                pearson_r, pearson_p = pearsonr(attention_values, human_feature_values)
+                # Spearman's correlation
+                spearman_r, spearman_p = spearmanr(attention_values, human_feature_values)
             else:
-                r_value, p_value = (np.nan, np.nan)
+                pearson_r, pearson_p = (np.nan, np.nan)
+                spearman_r, spearman_p = (np.nan, np.nan)
             results.append({
                 'layer': layer_idx,
                 'feature': feature_name,
-                'pearson_r': r_value,
-                'p_value': p_value
+                'pearson_r': pearson_r,
+                'pearson_p_value': pearson_p,
+                'spearman_r': spearman_r,
+                'spearman_p_value': spearman_p
             })
     return pd.DataFrame(results)
 
@@ -64,7 +70,8 @@ def main():
     # --- Exploratory analysis for single layer ---
     layer_idx = 0  # customize as needed
     attention_flat, layer_attention_values = extract_layer_attention(attention, token_indices, layer_idx)
-    exploratory_analysis(human_df, layer_attention_values, layer_idx)
+    save_dir = "/scratch/7982399/thesis/outputs/analysis_plots"
+    exploratory_analysis(human_df, layer_attention_values, layer_idx, save_dir)
     
     # --- Correlation Analysis ---
     attention_nonpadded = attention_flat[:, token_indices]
