@@ -2,6 +2,13 @@ import pandas as pd
 import math
 import json
 
+# Script for further processing of participant data
+# Steps:
+# Align Sent_IDs for participant 6 and 11
+# Remove '_NR' from Sent_IDs for convenience of sorting the df
+# Extract sentences directly from participant data to ensure perfect alignment
+# Average participant data for each sentence and word
+
 # Load CSV
 df = pd.read_csv('data/task2/processed/all_participants.csv')
 
@@ -29,10 +36,10 @@ df['Sent_ID'] = df['Sent_ID'].apply(lambda x: int(x.split('_')[0]))
 df = df.sort_values(by=['Sent_ID', 'Word_ID'])
 
 # Get unique combinations of Sent_ID and Word_ID with their corresponding words
-unique_words = df[['Sent_ID', 'Word_ID', 'Word']].drop_duplicates()
+sentence_items = df[['Sent_ID', 'Word_ID', 'Word']].drop_duplicates()
 
 # Group by Sent_ID to get list of words for each sentence
-sentences = unique_words.groupby('Sent_ID')['Word'].apply(list).tolist()
+sentences = sentence_items.groupby('Sent_ID')['Word'].apply(list).tolist()
 # Clean nan values
 sentences = [[word for word in sentence if pd.notnull(word)] for sentence in sentences]
 # Save the cleaned sentences to a JSON file
