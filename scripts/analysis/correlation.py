@@ -71,7 +71,7 @@ def main():
     # --- Exploratory analysis for single layer ---
     layer_idx = 0  # customize as needed
     attention_flat, layer_attention_values = extract_layer_attention(attention, token_indices, layer_idx)
-    save_dir = "thesis/outputs/analysis_plots"
+    save_dir = "outputs/analysis_plots"
     
     # --- Correlation Analysis ---
     attention_nonpadded = attention_flat[:, token_indices]

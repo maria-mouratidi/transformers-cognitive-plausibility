@@ -44,7 +44,7 @@ def load_llama(
         cache_dir=cache_dir,
         torch_dtype=torch.bfloat16,
         attn_implementation="eager",
-        low_cpu_mem_usage=True)#.to(device)
+        low_cpu_mem_usage=True).to(device)
     
     model.eval()
     return model, tokenizer

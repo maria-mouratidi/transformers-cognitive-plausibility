@@ -144,23 +144,23 @@ if __name__ == "__main__":
 
     model_task2, tokenizer = load_llama(model_type="causal")
     # # model_task3, tokenizer = load_llama(model_type = "qa")
-    # save_model(model_task2, tokenizer, "/scratch/7982399/hf_cache")
+    save_model(model_task2, tokenizer, "/scratch/7982399/hf_cache")
 
-    # # Load the sentences
-    # with open('materials/sentences.json', 'r') as f:
-    #     sentences = json.load(f)
-    # # Subset for testing
-    # sentences = sentences[:subset]
+    # Load the sentences
+    with open('materials/sentences.json', 'r') as f:
+        sentences = json.load(f)
+    # Subset for testing
+    sentences = sentences[:subset]
 
-    # encodings, word_mappings, prompt_len = encode_input(sentences, tokenizer, "task2")
+    encodings, word_mappings, prompt_len = encode_input(sentences, tokenizer, "task2")
 
-    # attention = get_attention(model_task2, encodings)
+    attention = get_attention(model_task2, encodings)
 
-    # torch.save({
-    #     'attention': attention,
-    #     'word_mappings': word_mappings,
-    #     'prompt_len': prompt_len
-    # }, "/scratch/7982399/thesis/outputs/attention_data.pt")
+    torch.save({
+        'attention': attention,
+        'word_mappings': word_mappings,
+        'prompt_len': prompt_len
+    }, "/scratch/7982399/thesis/outputs/attention_data.pt")
 
     # Load the saved dictionary
     loaded_data = torch.load("/scratch/7982399/thesis/outputs/attention_data.pt")

@@ -48,7 +48,7 @@ def plot_human_feature_corr(human_df, features, save_dir=None):
     corr_matrix = human_df[features].corr(method='pearson')
     plt.figure(figsize=(8, 6))
     sns.heatmap(corr_matrix, annot=True, cmap="vlag", center=0)
-    plt.title("Human Feature Inter-correlations")
+    plt.title("Eye-gaze Feature Inter-correlations")
     plt.tight_layout()
 
     if save_dir:
