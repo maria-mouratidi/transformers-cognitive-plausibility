@@ -60,7 +60,8 @@ if __name__ == "__main__":
     with open('materials/sentences.json', 'r') as f:
         sentences = json.load(f)
 
-    sentences = sentences[:subset]
+    if subset:
+        sentences = sentences[:subset]
     num_layers, batch_size, max_sent_len = attention.shape
     #sentences = pad_lists(sentences, max_sent_len)
     # Loop through sentences in the batch and plot attention heatmaps

@@ -21,27 +21,39 @@ def plot_regplots(human_df, model_values, features, layer_idx, save_dir=None):
 
     plt.show()
 
-def plot_layer_feature_corr(results_df, save_dir=None):
+import numpy as np
+from scipy.stats import pearsonr
+
+def plot_feature_corr(results_df, corr_test='pearson', save_dir=None):
     """
     Heatmap of correlation values between layers and eye-gaze features.
+    Non-significant correlations are greyed out.
     """
-    pivot_table = results_df.pivot(index='layer', columns='feature', values='pearson_r')
+    # Pivot table for correlation values
+    pivot_table = results_df.pivot(index='layer', columns='feature', values=f'{corr_test}_r')
+
+    # Calculate p-values for significance testing
+    p_values = results_df.pivot(index='layer', columns='feature', values=f'{corr_test}_p_value')
+
+    # Create a mask for non-significant correlations
+    mask = p_values >= 0.05
+
     plt.figure(figsize=(12, 8))
-    sns.heatmap(pivot_table, annot=True, cmap="coolwarm", center=0)
+    sns.heatmap(pivot_table, annot=True, cmap="coolwarm", center=0, mask=mask, cbar_kws={'label': 'Correlation'})
     plt.title("Attention vs Eye-gaze Features Correlation (Layer-wise)")
-    plt.ylabel("Transformer Layer")
+    plt.ylabel("Model Layer")
     plt.xlabel("Eye-gaze Features")
     plt.tight_layout()
-
 
     if save_dir:
         save_path = os.path.join(save_dir, f'corr_heatmap.png')
         plt.savefig(save_path)
         print(f"Saved heatmap to {save_path}")
     plt.show()
+    plt.close()
 
 
-def plot_human_feature_corr(human_df, features, save_dir=None):
+def plot_eyegaze_corr(human_df, features, save_dir=None):
     """
     Heatmap of correlations among human eye-tracking features.
     """
@@ -57,4 +69,5 @@ def plot_human_feature_corr(human_df, features, save_dir=None):
         print(f"Saved heatmap to {save_path}")
     
     plt.show()
+    plt.close()
 

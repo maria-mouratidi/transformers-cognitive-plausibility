@@ -9,18 +9,18 @@ def plot_hist_kde_box(human_df, model_values, features, layer_idx, save_dir=None
         # Histogram + KDE (Human)
         plt.subplot(1, 3, 1)
         sns.histplot(human_df[feature_name], kde=True, bins=30)
-        plt.title(f'Eye-gaze Data - Histogram + KDE: {feature_name}')
+        plt.title(f'{feature_name} - Histogram + KDE')
         
         # Histogram + KDE (Model)
         plt.subplot(1, 3, 2)
         sns.histplot(model_values, kde=True, bins=30)
-        plt.title(f'Model Data (Layer {layer_idx}) - Histogram + KDE')
+        plt.title(f'Layer {layer_idx} - Histogram + KDE')
         
         # Boxplots
         plt.subplot(1, 3, 3)
         sns.boxplot(data=[human_df[feature_name], model_values], orient='h')
         plt.yticks([0, 1], ['Eye-gaze', f'Model Layer {layer_idx}'])
-        plt.title(f'Boxplots - Eye-gaze vs Model (Layer {layer_idx})')
+        plt.title(f'Boxplots - {feature_name} vs Layer {layer_idx}')
         
         plt.tight_layout()
         

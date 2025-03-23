@@ -11,9 +11,10 @@ FEATURES = ['nFixations', 'meanPupilSize', 'GD', 'TRT', 'FFD', 'SFD', 'GPT']
 
 def load_processed_data():
     human_df = pd.read_csv('data/task2/processed/processed_participants.csv')
-    human_df = human_df[human_df['Sent_ID'] < subset]  # Subset
+    if subset:
+        human_df = human_df[human_df['Sent_ID'] < subset]  # Subset
     model_data = torch.load("/scratch/7982399/thesis/outputs/attention_processed.pt")
-    attention = model_data['attention_processed']
+    attention = model_data['attention_processed'].cpu()
     return human_df, attention
 
 def map_token_indices(human_df, max_seq_len):
@@ -24,18 +25,6 @@ def map_token_indices(human_df, max_seq_len):
             flattened_idx = sent_id * max_seq_len + token_row['Word_ID']
             token_indices.append(flattened_idx)
     return np.array(token_indices)
-
-def extract_layer_attention(attention, token_indices, layer_idx):
-    attention_flat = attention.reshape(attention.shape[0], -1)
-    layer_attention = attention_flat[layer_idx, token_indices].numpy()
-    return attention_flat, layer_attention
-
-def exploratory_analysis(human_df, layer_attention_values, results_df, layer_idx, save_dir=None):
-    plot_hist_kde_box(human_df, layer_attention_values, FEATURES, layer_idx, save_dir)
-    shapiro_test(human_df, layer_attention_values, FEATURES, layer_idx)
-    plot_regplots(human_df, layer_attention_values, FEATURES, layer_idx, save_dir)
-    plot_layer_feature_corr(results_df, save_dir)
-    plot_human_feature_corr(human_df, FEATURES, save_dir)
 
 def correlation_analysis(attention_nonpadded, human_df):
     feature_matrix = human_df[FEATURES].to_numpy()
@@ -62,31 +51,45 @@ def correlation_analysis(attention_nonpadded, human_df):
             })
     return pd.DataFrame(results)
 
-def main():
+def exploratory_analysis_for_layers(human_df, attention_flat, token_indices, layers_to_analyze, save_dir=None):
+    for layer_idx in layers_to_analyze:
+        print(f"\n--- Exploratory analysis for Layer {layer_idx} ---")
+        layer_attention = attention_flat[layer_idx, token_indices].numpy()
+        plot_hist_kde_box(human_df, layer_attention, FEATURES, layer_idx, save_dir)
+        plt.close()
+        #shapiro_test(human_df, layer_attention, FEATURES, layer_idx)
+        plot_regplots(human_df, layer_attention, FEATURES, layer_idx, save_dir)
+        plt.close()
+
+def run_full_analysis():
     human_df, attention = load_processed_data()
     num_layers, _, max_seq_len = attention.shape
-    
     token_indices = map_token_indices(human_df, max_seq_len)
-    
-    # --- Exploratory analysis for single layer ---
-    layer_idx = 0  # customize as needed
-    attention_flat, layer_attention_values = extract_layer_attention(attention, token_indices, layer_idx)
-    save_dir = "outputs/analysis_plots"
-    
-    # --- Correlation Analysis ---
+    attention_flat = attention.reshape(num_layers, -1)
     attention_nonpadded = attention_flat[:, token_indices]
-    results_df = correlation_analysis(attention_nonpadded, human_df)
-
-    exploratory_analysis(human_df, layer_attention_values, results_df, layer_idx, save_dir)
     
-    # Filter significant results
+    # --- Exploratory Analysis ---
+    first_layer = 0
+    middle_layer = num_layers // 2
+    last_layer = num_layers - 1
+    layers_to_analyze = [first_layer, middle_layer, last_layer]
+    save_dir = "outputs/analysis_plots"
+    exploratory_analysis_for_layers(human_df, attention_flat, token_indices, layers_to_analyze, save_dir)
+    
+    # --- Correlation Analysis across ALL layers ---
+    results_df = correlation_analysis(attention_nonpadded, human_df)
+    
+    # --- Global Heatmaps ---
+    plot_feature_corr(results_df, 'pearson', save_dir)
+    plot_eyegaze_corr(human_df, FEATURES, save_dir)
+    
+    # --- Filter & print significant correlations ---
     significance_threshold = 0.05
-    significant_results = results_df[
+    sig = results_df[
         (results_df['pearson_p_value'] < significance_threshold) &
         (results_df['spearman_p_value'] < significance_threshold)
     ]
-    
-    print(significant_results)
+    print(sig)
 
 if __name__ == "__main__":
-    main()
+    run_full_analysis()
