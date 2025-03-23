@@ -3,6 +3,7 @@
 !/data/task2/processed
 !/data/task3/processed
 /results/
+/outputs/
 
 # Python
 *.pyc

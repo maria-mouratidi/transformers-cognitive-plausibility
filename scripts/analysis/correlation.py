@@ -3,9 +3,9 @@ import pandas as pd
 from scipy.stats import pearsonr, spearmanr
 import torch
 from scripts.probing.raw import subset
-from scripts.visuals.eda import plot_hist_kde_box
-from scripts.visuals.normality_test import shapiro_test
-from scripts.visuals.corr_plots import plot_regplots, plot_corr_heatmap
+from scripts.visuals.eda import *
+from scripts.visuals.normality_test import *
+from scripts.visuals.corr_plots import *
 
 FEATURES = ['nFixations', 'meanPupilSize', 'GD', 'TRT', 'FFD', 'SFD', 'GPT']
 
@@ -30,11 +30,12 @@ def extract_layer_attention(attention, token_indices, layer_idx):
     layer_attention = attention_flat[layer_idx, token_indices].numpy()
     return attention_flat, layer_attention
 
-def exploratory_analysis(human_df, layer_attention_values, layer_idx, save_dir=None):
+def exploratory_analysis(human_df, layer_attention_values, results_df, layer_idx, save_dir=None):
     plot_hist_kde_box(human_df, layer_attention_values, FEATURES, layer_idx, save_dir)
     shapiro_test(human_df, layer_attention_values, FEATURES, layer_idx)
     plot_regplots(human_df, layer_attention_values, FEATURES, layer_idx, save_dir)
-    plot_corr_heatmap(human_df, layer_attention_values, FEATURES, layer_idx, save_dir)
+    plot_layer_feature_corr(results_df, save_dir)
+    plot_human_feature_corr(human_df, FEATURES, save_dir)
 
 def correlation_analysis(attention_nonpadded, human_df):
     feature_matrix = human_df[FEATURES].to_numpy()
@@ -70,17 +71,18 @@ def main():
     # --- Exploratory analysis for single layer ---
     layer_idx = 0  # customize as needed
     attention_flat, layer_attention_values = extract_layer_attention(attention, token_indices, layer_idx)
-    save_dir = "/scratch/7982399/thesis/outputs/analysis_plots"
-    exploratory_analysis(human_df, layer_attention_values, layer_idx, save_dir)
+    save_dir = "thesis/outputs/analysis_plots"
     
     # --- Correlation Analysis ---
     attention_nonpadded = attention_flat[:, token_indices]
     results_df = correlation_analysis(attention_nonpadded, human_df)
+
+    exploratory_analysis(human_df, layer_attention_values, results_df, layer_idx, save_dir)
     
     # Filter significant results
     significance_threshold = 0.05
     significant_results = results_df[
-        (results_df['pearson_p_value'] < significance_threshold) |
+        (results_df['pearson_p_value'] < significance_threshold) &
         (results_df['spearman_p_value'] < significance_threshold)
     ]
     
