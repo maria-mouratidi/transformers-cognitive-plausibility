@@ -32,4 +32,5 @@ def plot_hist_kde_box(human_df, model_values, features, layer_idx, save_dir=None
             plt.savefig(save_path)
             print(f"Saved heatmap to {save_path}")
     
-    plt.show()
+        plt.show()
+        plt.close()

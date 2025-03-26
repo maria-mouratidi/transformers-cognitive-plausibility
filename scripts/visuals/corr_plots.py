@@ -19,36 +19,27 @@ def plot_regplots(human_df, model_values, features, layer_idx, save_dir=None):
             plt.savefig(save_path)
             print(f"Saved heatmap to {save_path}")
 
-    plt.show()
+        plt.show()
+        plt.close()
 
-import numpy as np
-from scipy.stats import pearsonr
+# In your `corr_plots.py`
+def plot_feature_corr(results_df, method='pearson', save_dir=None, significance_threshold=0.05):
+    pivot = results_df.pivot(index='layer', columns='feature', values=f'{method}_r')
+    pvals = results_df.pivot(index='layer', columns='feature', values=f'{method}_p_value')
 
-def plot_feature_corr(results_df, corr_test='pearson', save_dir=None):
-    """
-    Heatmap of correlation values between layers and eye-gaze features.
-    Non-significant correlations are greyed out.
-    """
-    # Pivot table for correlation values
-    pivot_table = results_df.pivot(index='layer', columns='feature', values=f'{corr_test}_r')
-
-    # Calculate p-values for significance testing
-    p_values = results_df.pivot(index='layer', columns='feature', values=f'{corr_test}_p_value')
-
-    # Create a mask for non-significant correlations
-    mask = p_values >= 0.05
+    # Create mask for non-significant p-values
+    mask = pvals >= significance_threshold
 
     plt.figure(figsize=(12, 8))
-    sns.heatmap(pivot_table, annot=True, cmap="coolwarm", center=0, mask=mask, cbar_kws={'label': 'Correlation'})
-    plt.title("Attention vs Eye-gaze Features Correlation (Layer-wise)")
-    plt.ylabel("Model Layer")
-    plt.xlabel("Eye-gaze Features")
+    sns.heatmap(pivot, mask=mask, annot=True, fmt=".2f", cmap="coolwarm", center=0, cbar_kws={'label': f'{method.title()} r'})
+    plt.title(f"Layer-wise Attention vs Human Feature Correlations ({method.title()}, p<{significance_threshold})")
+    plt.ylabel("Transformer Layer")
+    plt.xlabel("Human Features")
     plt.tight_layout()
-
+    
     if save_dir:
-        save_path = os.path.join(save_dir, f'corr_heatmap.png')
-        plt.savefig(save_path)
-        print(f"Saved heatmap to {save_path}")
+        os.makedirs(save_dir, exist_ok=True)
+        plt.savefig(f"{save_dir}/corr_{method}.png")
     plt.show()
     plt.close()
 
