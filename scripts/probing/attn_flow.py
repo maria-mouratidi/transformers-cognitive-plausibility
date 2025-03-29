@@ -74,7 +74,6 @@ def compute_node_flow(G: nx.DiGraph, labels_to_index: dict, input_nodes: List[st
 
     return flow_values
 
-
 def compute_flow_relevance(full_att_mat: np.ndarray) -> np.ndarray:
     """
     Computes flow relevance scores for all words in a sentence across all layers and batches.
@@ -95,9 +94,15 @@ def compute_flow_relevance(full_att_mat: np.ndarray) -> np.ndarray:
             # Extract attention for the current layer and batch
             batch_attention = full_att_mat[layer, batch_idx, :, :, :]  # Shape: [num_heads, seq_len, seq_len]
 
-            # Aggregate attention across heads and normalize
+            # Aggregate attention across heads
             res_att_mat = batch_attention.sum(axis=0) / num_heads
-            res_att_mat += np.eye(seq_len, dtype=np.float32)  
+
+            # Apply causal masking (upper triangular mask)
+            causal_mask = np.tril(np.ones((seq_len, seq_len), dtype=np.float32))
+            res_att_mat *= causal_mask
+
+            # Add self-loops and normalize
+            res_att_mat += np.eye(seq_len, dtype=np.float32)
             res_att_mat /= res_att_mat.sum(axis=-1, keepdims=True)
 
             # Convert attention to graph format
@@ -117,7 +122,7 @@ def compute_flow_relevance(full_att_mat: np.ndarray) -> np.ndarray:
             # Store the results in the tensor
             all_layers_flow_relevance[layer, batch_idx] = flow_values
 
-    return all_layers_flow_relevance # [num_layers, batch_size, seq_len, seq_len]
+    return all_layers_flow_relevance  # [num_layers, batch_size, seq_len, seq_len]
 
 subset = 2
 if __name__ == "__main__":
@@ -165,3 +170,8 @@ if __name__ == "__main__":
 
     # Print the type and shape of the loaded data
     print(attention_flow.shape)
+
+
+# TODO: look into whether it is aggregated across layers or not...i think chat is tripping      
+# TODO: convert from tokens to words
+# TODO: look into masking for deocder models
