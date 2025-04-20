@@ -9,11 +9,11 @@ from scripts.visuals.corr_plots import *
 
 FEATURES = ['nFixations', 'meanPupilSize', 'GD', 'TRT', 'FFD', 'SFD', 'GPT']
 
-def load_processed_data(task: str):
+def load_processed_data(attn_method: str, task: str):
     human_df = pd.read_csv('data/task2/processed/processed_participants.csv')
     if subset:
         human_df = human_df[human_df['Sent_ID'] < subset]  # Subset
-    model_data = torch.load(f"/scratch/7982399/thesis/outputs/{task}/attention_processed.pt")
+    model_data = np.load(f"/scratch/7982399/thesis/outputs/{task}/{attn_method}/attention_processed.npy")
     attention = model_data['attention_processed'].cpu()
     return human_df, attention
 
@@ -56,8 +56,8 @@ def exploratory_analysis_for_layers(human_df, attention, layers_to_analyze, save
         #shapiro_test(human_df, layer_attention, FEATURES, layer_idx)
         plot_regplots(human_df, attention[layer_idx, :], FEATURES, layer_idx, save_dir)
 
-def run_full_analysis(task: str):
-    human_df, attention = load_processed_data(task=task)
+def run_full_analysis(attn_method: str, task: str,):
+    human_df, attention = load_processed_data(attn_method=attn_method, task=task)
     num_layers, num_sentences, max_seq_len = attention.shape
     token_indices = map_token_indices(human_df)
     
@@ -70,7 +70,8 @@ def run_full_analysis(task: str):
     attention_nonpadded = attention[:, sent_ids, word_ids].numpy()
     # --- Exploratory Analysis ---
     layers_to_analyze = [0, 31]
-    save_dir = f"outputs/{task}/analysis_plots"
+    save_dir = f"outputs/{task}/{attn_method}/analysis_plots"
+    os.makedirs(save_dir, exist_ok=True)
     #save_dir = None
     exploratory_analysis_for_layers(human_df, attention_nonpadded, layers_to_analyze, save_dir)
     
@@ -88,7 +89,7 @@ def run_full_analysis(task: str):
         (results_df['pearson_p_value'] < significance_threshold) &
         (results_df['spearman_p_value'] < significance_threshold)
     ]
-    sig.to_csv(f"outputs/{task}/significant_correlations.csv", index=False)
+    sig.to_csv(save_dir, index=False)
 
 if __name__ == "__main__":
-    run_full_analysis(task="none")
+    run_full_analysis(attn_method = "flow", task="task2")

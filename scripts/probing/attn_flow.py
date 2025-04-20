@@ -34,8 +34,6 @@ def get_adjmat(attention_matrix: np.ndarray) -> Tuple[np.ndarray, dict]:
 
     return adj_mat, labels_to_index
 
-
-
 def compute_node_flow(G: nx.DiGraph, labels_to_index: dict, input_nodes: List[str], output_nodes: List[str], seq_len: int) -> np.ndarray:
     """
     Computes node-to-node flow values based on maximum flow.
@@ -101,7 +99,7 @@ def compute_flow_relevance(full_att_mat: np.ndarray) -> np.ndarray:
             causal_mask = np.tril(np.ones((seq_len, seq_len), dtype=np.float32))
             res_att_mat *= causal_mask
 
-            # Add self-loops and normalize
+            # Add self-loop and normalize
             res_att_mat += np.eye(seq_len, dtype=np.float32)
             res_att_mat /= res_att_mat.sum(axis=-1, keepdims=True)
 
@@ -124,12 +122,60 @@ def compute_flow_relevance(full_att_mat: np.ndarray) -> np.ndarray:
 
     return all_layers_flow_relevance  # [num_layers, batch_size, seq_len, seq_len]
 
-subset = 2
+import numpy as np
+
+def process_attention_flow(attention: np.ndarray, word_mappings: List[List[Tuple[str, int]]],
+                           prompt_len: int,reduction: str = "mean") -> np.ndarray:
+    """
+    Extract word-level attention from token-level attention weights for attention flow (NumPy version).
+
+    Args:
+        attention: NumPy array [num_layers, batch_size, seq_len, seq_len]
+        word_mappings: List of token counts for each word in each sentence
+        prompt_len: Length of the prompt, used to filter out prompt tokens
+        reduction: Reduction method, either "mean" (average) or "max" (max of tokens per word)
+
+    Returns:
+        Word attention NumPy array [num_layers, batch_size, seq_len, max_words]
+    """
+    print("initial attention shape:", attention.shape)
+    num_layers, batch_size, seq_len, _ = attention.shape
+
+    max_words = max(len(word_map) for word_map in word_mappings)
+    word_attentions = np.zeros((num_layers, batch_size, seq_len, max_words), dtype=np.float32)
+
+    for sentence_idx, word_map in enumerate(word_mappings):
+        for word_idx, (word, num_tokens) in enumerate(word_map):
+            token_attentions = []
+
+            for n_token in range(num_tokens):
+                prev_tokens = word_map[:word_idx]
+                token_idx = sum(token[1] for token in prev_tokens) + n_token
+                token_attention = attention[:, sentence_idx, :, token_idx]  # [num_layers, seq_len]
+                token_attentions.append(token_attention)
+
+            token_attentions = np.stack(token_attentions, axis=-1)  # [num_layers, seq_len, num_tokens]
+
+            # Apply reduction over tokens
+            if reduction == "mean":
+                word_attention = np.mean(token_attentions, axis=-1)  # [num_layers, seq_len]
+            elif reduction == "max":
+                word_attention = np.max(token_attentions, axis=-1)  # [num_layers, seq_len]
+            else:
+                raise ValueError("Reduction method must be either 'mean' or 'max'")
+            
+            word_attentions[:, sentence_idx, :, word_idx] = word_attention
+
+    word_attentions = np.mean(word_attentions, axis=2)  # [num_layers, batch_size, seq_len]  
+
+    return word_attentions[:, :, prompt_len:]  # Remove prompt words
+
+subset = False
 if __name__ == "__main__":
 
-    model_type = "causal" #'qa' for task3
+    # model_type = "causal" #'qa' for task3
+    # model, tokenizer = load_llama(model_type=model_type)
     task = "task2"
-    model, tokenizer = load_llama(model_type=model_type)
 
     # # Load the sentences
     # with open('materials/sentences.json', 'r') as f:
@@ -137,6 +183,7 @@ if __name__ == "__main__":
     
     # # Subset for testing
     # if subset:
+    #     print(f"Using subset of {subset} sentences")
     #     sentences = sentences[:subset]
 
     # encodings, word_mappings, prompt_len = encode_input(sentences, tokenizer, task)
@@ -150,28 +197,33 @@ if __name__ == "__main__":
     #     'input_ids': encodings['input_ids'],
     # }, f"/scratch/7982399/thesis/outputs/{task}/attention_data.pt")
 
-    # # Load the attention data
-    # loaded_data = torch.load(f"/scratch/7982399/thesis/outputs/{task}/attention_data.pt")
+    # Load the attention data
+    loaded_data = torch.load(f"/scratch/7982399/thesis/outputs/{task}/attention_data.pt")
 
-    # # Extract raw attention over the input
-    # attention_tensor = loaded_data['attention']  # [num_layers, batch_size, num_heads, seq_len, seq_len]
-    # input_ids = loaded_data['input_ids']  # [batch_size, seq_len]
+    # Extract raw attention over the input
+    attention_tensor = loaded_data['attention']  # [num_layers, batch_size, num_heads, seq_len, seq_len]
+    input_ids = loaded_data['input_ids']  # [batch_size, seq_len]
+    word_mappings = loaded_data['word_mappings']  # List of word mappings
+    prompt_len = loaded_data['prompt_len']  # Length of the prompt
 
-    # print("Computing flow relevance scores...")
+    # print("Raw attention shape: ", attention_tensor.shape)
     
     # # Compute flow relevance for all layers and batches
+    # print("Computing flow relevance scores...")
     # all_examples_flow_relevance = compute_flow_relevance(attention_tensor)
 
-    # # Save the results
+    # # # Save the results
     # np.save(f'outputs/{task}/attention_flow.npy', all_examples_flow_relevance)
 
     # Load the saved attention flow data
-    attention_flow = np.load('outputs/task2/attention_flow.npy')
+    attention_flow = np.load('outputs/task2/attention_processed.npy')
 
     # Print the type and shape of the loaded data
     print(attention_flow.shape)
 
+    # Process the attention flow data
+    attention_processed = process_attention_flow(attention_flow, word_mappings, prompt_len)
+    print("Processed attention shape: ", attention_processed.shape)
 
-# TODO: look into whether it is aggregated across layers or not...i think chat is tripping      
-# TODO: convert from tokens to words
-# TODO: look into masking for deocder models
+
+    #TODO: refactor to use torch instead of numpy. or the opposite for raw attn

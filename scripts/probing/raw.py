@@ -136,7 +136,7 @@ def process_attention(attention: torch.Tensor, word_mappings: List[List[Tuple[st
             
             word_attentions[:, sentence_idx, :, :, word_idx] = word_attention
     
-    word_average = word_attentions.mean(dim=3)  # [num_layers, batch_size, num_heads, max_words]
+    word_average = word_attentions.mean(dim=3)  # [num_layers, batch_size, num_heads, seq_len, max_words]
     head_average = word_average.mean(dim=2)  # [num_layers, batch_size, seq_len, max_words]
     head_average = head_average.squeeze(2)  # [num_layers, batch_size, max_words]
     
@@ -144,8 +144,6 @@ def process_attention(attention: torch.Tensor, word_mappings: List[List[Tuple[st
     normalized_attention = head_average / (attention_sum + 1e-8)  # Normalize
 
     return normalized_attention[:, :, prompt_len:]
-
-
 
 subset = False # Set to False to process all sentences
 

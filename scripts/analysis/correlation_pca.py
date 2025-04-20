@@ -7,6 +7,8 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import os
 
+# TODO: remove noninformtive features? (e.g., go past time)
+
 def apply_pca(human_df, features, variance_threshold=0.95):
     pca = PCA()
     pca_features = pca.fit_transform(human_df[features])
@@ -83,7 +85,7 @@ def plot_pca_correlations(results_df, method='pearson', save_dir=None):
 
 def run_analysis_with_pca(task: str, variance_threshold=0.95, save_dir=None):
     human_df = pd.read_csv('data/task2/processed/processed_participants.csv')
-    model_data = torch.load(f"/scratch/7982399/thesis/outputs/{task}/attention_processed.pt")
+    model_data = torch.load(f"/scratch/7982399/thesis/outputs/{task}/{attn_method}/attention_processed.pt")
     attention = model_data['attention_processed'].cpu()
     
     token_indices = list(zip(human_df['Sent_ID'], human_df['Word_ID']))
@@ -109,5 +111,6 @@ def run_analysis_with_pca(task: str, variance_threshold=0.95, save_dir=None):
 
 if __name__ == "__main__":
     task = "task2"
-    save_dir = f"outputs/{task}/pca"
-    run_analysis_with_pca(task=task, variance_threshold=0.95, save_dir=save_dir)
+    attn_method = "flow"
+    save_dir = f"outputs/{task}/{attn_method}/pca"
+    run_analysis_with_pca(task=task, attn_method=attn_method, variance_threshold=0.95, save_dir=save_dir)
