@@ -1,4 +1,5 @@
 import numpy as np
+import os
 import pandas as pd
 from scipy.stats import pearsonr, spearmanr
 import torch
@@ -14,7 +15,12 @@ def load_processed_data(attn_method: str, task: str):
     if subset:
         human_df = human_df[human_df['Sent_ID'] < subset]  # Subset
     model_data = np.load(f"/scratch/7982399/thesis/outputs/{task}/{attn_method}/attention_processed.npy")
-    attention = model_data['attention_processed'].cpu()
+    print(model_data[0,0,0])
+    try:
+        attention = model_data['attention_processed'].cpu()
+    except IndexError: #this will happen for attention flow since we only save the tensor not the entire dict, refactor later
+        attention = model_data
+
     return human_df, attention
 
 def map_token_indices(human_df):
@@ -58,6 +64,9 @@ def exploratory_analysis_for_layers(human_df, attention, layers_to_analyze, save
 
 def run_full_analysis(attn_method: str, task: str,):
     human_df, attention = load_processed_data(attn_method=attn_method, task=task)
+    return
+    print(f"Attention shape: {attention.shape}")
+
     num_layers, num_sentences, max_seq_len = attention.shape
     token_indices = map_token_indices(human_df)
     
@@ -67,13 +76,13 @@ def run_full_analysis(attn_method: str, task: str,):
     word_ids = torch.tensor(word_ids, dtype=torch.long)
 
     # Efficient batch indexing in PyTorch
-    attention_nonpadded = attention[:, sent_ids, word_ids].numpy()
+    attention_nonpadded = attention[:, sent_ids, word_ids]#.numpy()
     # --- Exploratory Analysis ---
     layers_to_analyze = [0, 31]
     save_dir = f"outputs/{task}/{attn_method}/analysis_plots"
     os.makedirs(save_dir, exist_ok=True)
     #save_dir = None
-    exploratory_analysis_for_layers(human_df, attention_nonpadded, layers_to_analyze, save_dir)
+    #exploratory_analysis_for_layers(human_df, attention_nonpadded, layers_to_analyze, save_dir)
     
     # --- Correlation Analysis across ALL layers ---
     results_df = correlation_analysis(attention_nonpadded, human_df)
