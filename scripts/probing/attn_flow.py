@@ -1,108 +1,117 @@
 import networkx as nx
 import numpy as np
-import json
 import torch
-from typing import List, Tuple
+from typing import List, Tuple, Dict
+import multiprocessing as mp
+from tqdm import tqdm
 from scripts.probing.load_model import *
 from scripts.probing.raw import *
 
-def get_adjacency_mat(attention: np.ndarray, input_tokens: List[str] = None) -> Tuple[np.ndarray, dict]:
+def build_attention_graph(att: np.ndarray) -> Tuple[np.ndarray, dict]:
     """
-    Build adjacency matrix across all layers.
-
+    Build a graph-compatible adjacency matrix from multi-layer attention.
+    
     Args:
-        attention: Array of shape [num_layers, seq_len, seq_len]
-        input_tokens: Optional, just for reference. Not used here.
+        att: [num_layers, seq_len, seq_len] averaged and normalized attention
 
     Returns:
-        adj_mat: Adjacency matrix of shape [num_nodes, num_nodes]
-        labels_to_index: Dict mapping node labels like "L1_3" to graph indices.
+        adj_matrix: [num_nodes, num_nodes]
+        node_map: {"L{layer}_{token_idx}": graph_node_idx}
     """
-    num_layers, seq_len, _ = attention.shape
+    num_layers, seq_len, _ = att.shape
     num_nodes = (num_layers + 1) * seq_len
-    adj_mat = np.zeros((num_nodes, num_nodes), dtype=np.float32)
-    labels_to_index = {}
+    adj_matrix = np.zeros((num_nodes, num_nodes), dtype=np.float32)
+    node_map = {f"L{l}_{i}": l * seq_len + i for l in range(num_layers + 1) for i in range(seq_len)}
 
-    # Assign index to each node L0_i, L1_i, ..., L_N_i
-    for layer in range(num_layers + 1):
+    for l in range(num_layers):
         for i in range(seq_len):
-            label = f"L{layer}_{i}"
-            idx = layer * seq_len + i
-            labels_to_index[label] = idx
+            for j in range(i + 1):  # causal mask: j ≤ i
+                src = node_map[f"L{l}_{i}"]
+                tgt = node_map[f"L{l+1}_{j}"]
+                adj_matrix[src, tgt] = att[l, i, j]
+    
+    return adj_matrix, node_map
 
-    # Fill adjacency matrix: layer L → layer L+1 using multi_layer_att[L]
-    for layer in range(num_layers):
-        for i in range(seq_len):
-            for j in range(seq_len):
-                src = labels_to_index[f"L{layer}_{i}"]
-                tgt = labels_to_index[f"L{layer+1}_{j}"]
-                if j <= i:  # Causal attention
-                    adj_mat[src, tgt] = attention[layer, i, j]
+def compute_single_node_flow(args) -> Tuple[int, np.ndarray]:
+    """
+    Computes flow values from all input_nodes to a single output_node using nx.maximum_flow.
 
-    return adj_mat, labels_to_index
-
-
-def compute_single_node_flow(G, labels_to_index, input_nodes, output_node, seq_len):
+    Returns:
+        output_token_index: The index of the output token (0-based).
+        relevance_row: Array of shape [seq_len] with normalized flow values.
+    """
+    G, labels_to_index, input_nodes, output_node, seq_len = args
     u = labels_to_index[output_node]
     layer = int(output_node.split("_")[0][1:]) - 1
-    flow_row = np.zeros(seq_len, dtype=np.float32)
+    flows = np.zeros(seq_len, dtype=np.float32)
 
     for inp_node in input_nodes:
         v = labels_to_index[inp_node]
-        try:
-            flow = nx.maximum_flow_value(G, v, u)
-        except:
-            flow = 0.0
-        flow_row[v] = flow
+        flow_dict = nx.maximum_flow(G, v, u)[1]
+        flow_value = flow_dict.get(v, {}).get(u, 0.0)
+        flows[v % seq_len] = flow_value
 
-    total = flow_row.sum()
-    if total > 0:
-        flow_row /= total
+    flow_norm = flows / flows.sum()
 
-    return flow_row
+    return flow_norm
 
-def compute_flow_relevance(raw_attention: np.ndarray, input_ids: List[List[str]]) -> np.ndarray:
+
+def compute_node_flow_parallel(
+    G: nx.DiGraph,
+    labels_to_index: Dict[str, int],
+    input_nodes: List[str],
+    output_nodes: List[str],
+    seq_len: int,
+    num_workers: int = 4,
+) -> np.ndarray:
     """
-    Computes flow relevance for all layers, batches, and token pairs.
-
-    Args:
-        raw_attention: Attention tensor [num_layers, batch_size, num_heads, seq_len, seq_len]
-        input_token_list: List of tokenized input strings, one list of tokens per batch item.
+    Computes flow values using parallel processing for each output node.
 
     Returns:
-        np.ndarray of shape [num_layers, batch_size, seq_len, seq_len]
+        flow_matrix: Array [num_output_nodes, seq_len] with relevance values.
+    """
+    args = [(G, labels_to_index, input_nodes, out_node, seq_len) for out_node in output_nodes]
+    with mp.Pool(num_workers) as pool:
+        results = pool.map(compute_single_node_flow, args)
+
+    flow_matrix = np.stack(results, axis=0)  # [num_output_nodes, seq_len]
+    return flow_matrix
+
+def get_flow_relevance(raw_attention: np.ndarray, input_ids: List[List[str]]) -> np.ndarray:
+    """
+    Compute attention flow relevance across layers and batches.
+    
+    Args:
+        raw_attention: [num_layers, batch_size, num_heads, seq_len, seq_len]
+        input_ids: token IDs per batch (used for length only)
+
+    Returns:
+        flow_relevance: [num_layers, batch_size, seq_len, seq_len]
     """
     num_layers, batch_size, num_heads, seq_len, _ = raw_attention.shape
     flow_relevance = np.zeros((num_layers, batch_size, seq_len, seq_len), dtype=np.float32)
-    causal_mask = np.tril(np.ones((seq_len, seq_len), dtype=np.float32)) 
-    identity_attention = np.eye(seq_len, dtype=np.float32)  
-    input_nodes = [f"L0_{i}" for i in range(seq_len)]
-    
+
+    causal_mask = np.tril(np.ones((seq_len, seq_len), dtype=np.float32))
+    identity = np.eye(seq_len, dtype=np.float32)
+
     for b in range(batch_size):
-        tokens = input_ids[b]  # [seq_len]
-        attention = raw_attention[:, b]  # [num_layers, num_heads, seq_len, seq_len]
+        att = raw_attention[:, b].mean(axis=0)  # [num_layers, seq_len, seq_len]
+        att *= causal_mask[np.newaxis, :, :]
+        att += identity[np.newaxis, :, :]  # Add identity to avoid zero flow
+        att /= att.sum(axis=-1, keepdims=True)
 
-        # Step 1: Average heads and normalize
-        avg_attention = attention.mean(axis=1)  # [num_layers, seq_len, seq_len]
-        avg_attention = avg_attention * causal_mask[np.newaxis, :, :]  # Apply causal mask
-        avg_attention = avg_attention + identity_attention  # Apply residual connection
-        token_attention = avg_attention.sum(axis=-1, keepdims=True)
-        avg_attention = avg_attention / token_attention
+        adj_matrix, node_map = build_attention_graph(att)
+        G = nx.from_numpy_array(adj_matrix, create_using=nx.DiGraph())
+        nx.set_edge_attributes(G, {e: {"capacity": adj_matrix[e]} for e in G.edges})
 
-        # Step 2: Build graph across layers
-        adjacency_mat, labels_to_index = get_adjacency_mat(avg_attention, input_tokens=tokens)
-        G = nx.from_numpy_array(adjacency_mat, create_using=nx.DiGraph())
-        for i, j in G.edges():
-            G[i][j]["capacity"] = adjacency_mat[i, j]
+        input_nodes = [f"L0_{i}" for i in range(seq_len)]
 
-        # Step 3: Compute flow relevance for each layer and output token
-        for layer in range(num_layers):
-            for j in range(seq_len):
-                output_node = f"L{layer + 1}_{j}"
-                relevance_row = compute_single_node_flow(G, labels_to_index, input_nodes, output_node, seq_len)
-                flow_relevance[layer, b, :, j] = relevance_row
+        for layer in tqdm(range(num_layers), desc="Processing layers"):
+            output_nodes = [f"L{layer + 1}_{j}" for j in range(seq_len)]
+            flow_matrix = compute_node_flow_parallel(G, node_map, input_nodes, output_nodes, seq_len, num_workers=4)
+            flow_relevance[layer, b] = flow_matrix.T  # transpose to match shape [seq_len, seq_len]
 
-    return flow_relevance # [num_layers, batch_size, seq_len, seq_len]
+    return flow_relevance  # [num_layers, batch_size, seq_len, seq_len]
 
 
 def process_attention_flow(attention: np.ndarray, word_mappings: List[List[Tuple[str, int]]],
@@ -179,7 +188,7 @@ if __name__ == "__main__":
     # }, f"/scratch/7982399/thesis/outputs/{task}/raw/attention_data.pt")
 
     # Load the attention data
-    loaded_data = torch.load(f"/scratch/7982399/thesis/outputs/{task}/raw/attention_data.pt")
+    loaded_data = torch.load(f"/scratch/7982399/thesis/outputs/{task}/raw/attention_subset_data.pt")
 
     # Extract raw attention over the input
     attention_tensor = loaded_data['attention']  # [num_layers, batch_size, num_heads, seq_len, seq_len]
@@ -192,11 +201,11 @@ if __name__ == "__main__":
     # Compute flow relevance for all layers and batches
     print("Computing flow relevance scores...")
 
-    all_examples_flow_relevance = compute_flow_relevance(attention_tensor, input_ids)
+    all_examples_flow_relevance = get_flow_relevance(attention_tensor, input_ids)
     #print("Flow relevance: ", all_examples_flow_relevance[0,0,0])
 
     # Save the results
-    np.save(f'outputs/{task}/flow/attention_flow.npy', all_examples_flow_relevance)
+    np.save(f'outputs/{task}/flow/attention_flow_subset.npy', all_examples_flow_relevance)
 
     # # Load the saved attention flow data
     # attention_flow = np.load('outputs/task2/flow/attention_flow.npy')

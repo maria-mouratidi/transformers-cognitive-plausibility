@@ -15,3 +15,6 @@ Run scripts
 
 Check free memory on server:
 nvidia-smi --query-gpu=name,memory.total,memory.used,memory.free --format=csv
+
+To add speed in slurm job add:
+#SBATCH --gres=gpu:1
