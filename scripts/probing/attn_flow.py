@@ -32,29 +32,26 @@ def build_attention_graph(att: np.ndarray) -> Tuple[np.ndarray, dict]:
     
     return adj_matrix, node_map
 
-def compute_single_node_flow(args) -> Tuple[int, np.ndarray]:
+def compute_single_node_flow(args) -> np.ndarray:
     """
     Computes flow values from all input_nodes to a single output_node using nx.maximum_flow.
-
     Returns:
-        output_token_index: The index of the output token (0-based).
         relevance_row: Array of shape [seq_len] with normalized flow values.
     """
-    G, labels_to_index, input_nodes, output_node, seq_len = args
-    u = labels_to_index[output_node]
-    layer = int(output_node.split("_")[0][1:]) - 1
+    G, node_map, input_nodes, output_node, seq_len = args
+    output_node_id = node_map[output_node]
     flows = np.zeros(seq_len, dtype=np.float32)
 
     for inp_node in input_nodes:
-        v = labels_to_index[inp_node]
-        flow_dict = nx.maximum_flow(G, v, u)[1]
-        flow_value = flow_dict.get(v, {}).get(u, 0.0)
-        flows[v % seq_len] = flow_value
+        input_node_id = node_map[inp_node]
+        flow_value = nx.maximum_flow_value(G, input_node_id, output_node_id,
+                                           flow_func=nx.algorithms.flow.edmonds_karp)
+        input_token_idx = int(inp_node.split('_')[1])
+        flows[input_token_idx] = flow_value
 
-    flow_norm = flows / flows.sum()
-
-    return flow_norm
-
+    if flows.sum() == 0:
+        raise ValueError("Flow values are all zero, check implementation.")
+    return flows / flows.sum()
 
 def compute_node_flow_parallel(
     G: nx.DiGraph,
@@ -62,18 +59,17 @@ def compute_node_flow_parallel(
     input_nodes: List[str],
     output_nodes: List[str],
     seq_len: int,
-    num_workers: int = 4,
+    num_workers: int,
 ) -> np.ndarray:
     """
     Computes flow values using parallel processing for each output node.
-
     Returns:
         flow_matrix: Array [num_output_nodes, seq_len] with relevance values.
     """
     args = [(G, labels_to_index, input_nodes, out_node, seq_len) for out_node in output_nodes]
     with mp.Pool(num_workers) as pool:
-        results = pool.map(compute_single_node_flow, args)
-
+        # Use imap_unordered to reduce overhead and set chunksize
+        results = list(pool.imap_unordered(compute_single_node_flow, args, chunksize=4))
     flow_matrix = np.stack(results, axis=0)  # [num_output_nodes, seq_len]
     return flow_matrix
 
@@ -108,7 +104,7 @@ def get_flow_relevance(raw_attention: np.ndarray, input_ids: List[List[str]]) ->
 
         for layer in tqdm(range(num_layers), desc="Processing layers"):
             output_nodes = [f"L{layer + 1}_{j}" for j in range(seq_len)]
-            flow_matrix = compute_node_flow_parallel(G, node_map, input_nodes, output_nodes, seq_len, num_workers=4)
+            flow_matrix = compute_node_flow_parallel(G, node_map, input_nodes, output_nodes, seq_len, num_workers= int(os.environ.get("SLURM_CPUS_PER_TASK", 4)))
             flow_relevance[layer, b] = flow_matrix.T  # transpose to match shape [seq_len, seq_len]
 
     return flow_relevance  # [num_layers, batch_size, seq_len, seq_len]

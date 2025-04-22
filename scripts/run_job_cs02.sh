@@ -2,7 +2,7 @@
 #SBATCH --job-name=probing
 #SBATCH --time=01:00:00
 #SBATCH --mem=32G
-#SBATCH --partition=gpua100
+#SBATCH --partition=gpua16
 #SBATCH --output=/dev/null       # Disables SLURM standard output file
 #SBATCH --error=/dev/null        # Disables SLURM error output file
 source /scratch/7982399/conda/bin/activate thesis_env
