@@ -2,7 +2,7 @@
 #SBATCH --job-name=probing
 #SBATCH --time=01:00:00
 #SBATCH --mem=32G
-#SBATCH --partition=gpua16
+#SBATCH --partition=gpua100
 #SBATCH --output=/dev/null       # Disables SLURM standard output file
 #SBATCH --error=/dev/null        # Disables SLURM error output file
 source /scratch/7982399/conda/bin/activate thesis_env
@@ -19,7 +19,7 @@ ERROR_LOG="$ERROR_DIR/error_$(date +"%d-%H:%M:%S").log"
 
 cd /scratch/7982399/thesis
 export PYTHONPATH=$(pwd)
-python -m "scripts.probing.attn_flow" > "$OUTPUT_LOG" 2> "$ERROR_LOG"
+python -m "scripts.analysis.text_features" > "$OUTPUT_LOG" 2> "$ERROR_LOG"
 
 # Remove log files if they are empty
 [ ! -s "$OUTPUT_LOG" ] && rm "$OUTPUT_LOG"

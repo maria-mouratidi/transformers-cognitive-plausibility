@@ -11,22 +11,16 @@ from scripts.visuals.corr_plots import *
 FEATURES = ['nFixations', 'meanPupilSize', 'GD', 'TRT', 'FFD', 'SFD', 'GPT']
 
 def load_processed_data(attn_method: str, task: str):
-    human_df = pd.read_csv('data/task2/processed/processed_participants.csv')
+    human_df = pd.read_csv(f'data/{task}/processed/processed_participants.csv')
     if subset:
         human_df = human_df[human_df['Sent_ID'] < subset]  # Subset
-    model_data = np.load(f"/scratch/7982399/thesis/outputs/{task}/{attn_method}/attention_processed.npy")
-    print(model_data[0,0,0])
-    try:
-        attention = model_data['attention_processed'].cpu()
-    except IndexError: #this will happen for attention flow since we only save the tensor not the entire dict, refactor later
-        attention = model_data
+    model_data = torch.load(f"/scratch/7982399/thesis/outputs/{task}/{attn_method}/attention_processed.pt")
+    attention = model_data['attention_processed'].cpu()
 
     return human_df, attention
 
 def map_token_indices(human_df):
-    token_indices = []
-    for _, row in human_df.iterrows():
-        token_indices.append((row['Sent_ID'], row['Word_ID']))
+    token_indices = [(row['Sent_ID'], row['Word_ID']) for _, row in human_df.iterrows()]
     return token_indices
 
 def correlation_analysis(attention_nonpadded, human_df):

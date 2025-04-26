@@ -15,9 +15,8 @@ def apply_pca(human_df, features, variance_threshold=0.95):
     
     # Determine number of components based on explained variance
     cumulative_variance = np.cumsum(pca.explained_variance_ratio_)
-    n_components = np.argmax(cumulative_variance >= variance_threshold) + 1
-    
-    print(f"Selected {n_components} components to retain {variance_threshold * 100}% variance")
+    #n_components = np.argmax(cumulative_variance >= variance_threshold) + 1
+    #print(f"Selected {n_components} components to retain {variance_threshold * 100}% variance")
     n_components = 2
     pca = PCA(n_components=n_components)
     pca_features = pca.fit_transform(human_df[features])
