@@ -9,7 +9,7 @@ import os
 
 # TODO: remove noninformtive features? (e.g., go past time)
 
-def apply_pca(human_df, features, variance_threshold=0.95):
+def apply_pca(human_df, features, n_components=2, variance_threshold=0.95):
     pca = PCA()
     pca_features = pca.fit_transform(human_df[features])
     
@@ -17,7 +17,6 @@ def apply_pca(human_df, features, variance_threshold=0.95):
     cumulative_variance = np.cumsum(pca.explained_variance_ratio_)
     #n_components = np.argmax(cumulative_variance >= variance_threshold) + 1
     #print(f"Selected {n_components} components to retain {variance_threshold * 100}% variance")
-    n_components = 2
     pca = PCA(n_components=n_components)
     pca_features = pca.fit_transform(human_df[features])
     pca_df = pd.DataFrame(pca_features, columns=[f'PC{i+1}' for i in range(n_components)])
