@@ -169,6 +169,7 @@ if __name__ == "__main__":
 
     torch.save({
         'attention': attention,
+        'input_ids': encodings['input_ids'],
         'word_mappings': word_mappings,
         'prompt_len': prompt_len
     }, f"/scratch/7982399/thesis/outputs/{task}/raw/attention_data.pt")
@@ -186,7 +187,7 @@ if __name__ == "__main__":
     
     torch.save({
         'attention_processed': attention_processed,
+        'input_ids': encodings['input_ids'],
         'word_mappings': word_mappings,
         'prompt_len': prompt_len
     }, f"/scratch/7982399/thesis/outputs/{task}/raw/attention_processed.pt")
-    pass
