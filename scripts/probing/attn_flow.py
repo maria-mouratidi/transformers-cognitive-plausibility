@@ -1,5 +1,6 @@
 import networkx as nx
 import torch
+import os
 from typing import List, Tuple, Dict
 
 # Adjusted to work with torch tensors
@@ -52,12 +53,15 @@ def compute_node_flow(G: nx.DiGraph, labels_to_index: Dict[str, int], input_node
 
     return flow_values
 
-def get_flow_relevance(attention_tensor: torch.Tensor, input_tokens: List[str], layer: int, output_index) -> torch.Tensor:
+def get_flow_relevance(attention_tensor: torch.Tensor, input_tokens: List[str], layer: int, output_index, pad_id = '128001', device='cuda') -> torch.Tensor:
     """
     Computes the flow relevance for a specified layer.
     Expects attention_tensor to have shape [num_layers, num_heads, seq_len, seq_len].
     """
     seq_len = attention_tensor.shape[-1]
+
+    if input_tokens[output_index] == pad_id: 
+        return torch.zeros(seq_len, dtype=torch.float32)
  
     res_att_mat = attention_tensor.mean(dim=1)  # Average across heads new shape: [num_layers, seq_len, seq_len]
     res_att_mat = res_att_mat + torch.eye(res_att_mat.shape[1])[None,...] # add identify matrices
@@ -74,7 +78,6 @@ def get_flow_relevance(attention_tensor: torch.Tensor, input_tokens: List[str], 
     input_nodes = []
     output_nodes = ['L'+str(layer+1)+'_'+str(output_index)]
 
-
     for key in labels_to_index:
         if labels_to_index[key] < seq_len:
             input_nodes.append(key)
@@ -84,9 +87,8 @@ def get_flow_relevance(attention_tensor: torch.Tensor, input_tokens: List[str], 
     flow_values_t = torch.tensor(flow_values, dtype=torch.float32)
     
     final_layer_flow = flow_values_t[(layer + 1)*seq_len:, layer*seq_len:(layer + 1)*seq_len]
-    print("final layer flow shape:", final_layer_flow.shape)
-        
-    return final_layer_flow[output_index]
+    flow_relevance = final_layer_flow[output_index].to(device)
+    return flow_relevance
 
 def process_attention_flow(attention: torch.Tensor, word_mappings: List[List[Tuple[str, int]]],
                            prompt_len: int, reduction: str = "mean") -> torch.Tensor:
@@ -122,33 +124,29 @@ def process_attention_flow(attention: torch.Tensor, word_mappings: List[List[Tup
 
 if __name__ == "__main__":
     task = "task2"
-    
-    # Load the attention data (assumed already saved as torch tensors)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # # Load the attention data (assumed already saved as torch tensors)
     loaded_data = torch.load(f"/scratch/7982399/thesis/outputs/{task}/raw/attention_data.pt")
-    attention_tensor = loaded_data['attention']            # [num_layers, batch_size, num_heads, seq_len, seq_len]
+    attention_tensor = loaded_data['attention'].to(device)          # [num_layers, batch_size, num_heads, seq_len, seq_len]
     input_ids = loaded_data['input_ids']                     # [batch_size, seq_len]
-    word_mappings = loaded_data['word_mappings']             # List of word mappings
-    prompt_len = loaded_data['prompt_len']                   # Length of the prompt
 
-    print("Raw attention shape:", attention_tensor.shape)
-    print("Computing flow relevance scores...")
-    
-    # Process only one sentence (first batch)
-    token_labels = [str(token) for token in input_ids[3]]
-    attention_tensor = attention_tensor[:, 3, ...]          # Now shape: [num_layers, num_heads, seq_len, seq_len]
-    
-    # Compute flow relevance for layer 0 (adjust as needed by changing layers list)
-    flow = get_flow_relevance(attention_tensor, token_labels, layer=31, output_index=5)
-    print("Flow relevance shape:", flow.shape)
-    print("Flow relevance values:", flow)
-    
-    # Save the flow results using torch.save: first argument is the data
-    torch.save(flow, f"/scratch/7982399/thesis/outputs/{task}/flow/attention_flow_subset.pt")
+    _, batch_size, _, seq_len, _ = attention_tensor.shape
+    flow_results = torch.zeros((batch_size, seq_len, seq_len), dtype=torch.float32, device=device)
+    checkpoint_file = f"/scratch/7982399/thesis/outputs/{task}/flow/attention_flow_checkpoint.pt"
 
-    # flow = torch.load(f"/scratch/7982399/thesis/outputs/{task}/flow/attention_flow_subset.pt")
-    # print(flow)
-    
-    # If needed, process attention flow further and save
-    # attention_processed = process_attention_flow(flow, word_mappings, prompt_len)
-    # print("Processed attention shape:", attention_processed.shape)
-    # torch.save(attention_processed, f"/scratch/7982399/thesis/outputs/{task}/flow/attention_processed.pt")
+    for batch in range(batch_size):
+        if os.path.exists(checkpoint_file):
+            # Optionally load previously computed progress here
+            flow_results = torch.load(checkpoint_file)
+        else:
+            print("Checkpoint file not found, starting from scratch.")
+
+        attention_tensor = attention_tensor[:, batch, ...]      # Now shape: [num_layers, num_heads, seq_len, seq_len]
+        input_ids_batch = input_ids[batch]                            # Now shape: [seq_len]
+        token_labels = [str(token.item()) for token in input_ids_batch]
+
+        for output_idx in range(seq_len):
+            # Compute flow relevance for the last layer
+            flow = get_flow_relevance(attention_tensor, token_labels, layer=31, output_index=output_idx, device=device)
+            flow_results[batch, output_idx, :] = flow
+        torch.save(flow_results, checkpoint_file)  # Save progress
