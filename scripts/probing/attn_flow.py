@@ -33,7 +33,6 @@ def compute_node_flow(G: nx.DiGraph, labels_to_index: Dict[str, int], input_node
     Computes the attention flow values between input and output tokens in a directed graph.
     Uses networkx maximum flow on a numpy array representation.
     """
-    import numpy as np
     num_nodes = len(labels_to_index)
     flow_values = torch.zeros((num_nodes, num_nodes))
     
@@ -53,7 +52,7 @@ def compute_node_flow(G: nx.DiGraph, labels_to_index: Dict[str, int], input_node
 
     return flow_values
 
-def get_flow_relevance(attention_tensor: torch.Tensor, input_tokens: List[str], layer: int, output_index, pad_id = '128001', device='cuda') -> torch.Tensor:
+def get_flow_relevance(attention_tensor: torch.Tensor, input_tokens: List[str], layer: int, output_index, pad_id = '128001') -> torch.Tensor:
     """
     Computes the flow relevance for a specified layer.
     Expects attention_tensor to have shape [num_layers, num_heads, seq_len, seq_len].
@@ -84,11 +83,9 @@ def get_flow_relevance(attention_tensor: torch.Tensor, input_tokens: List[str], 
     
     # Compute flow values and convert to torch tensor
     flow_values = compute_node_flow(G, labels_to_index, input_nodes, output_nodes, seq_len)
-    flow_values_t = torch.tensor(flow_values, dtype=torch.float32)
-    
-    final_layer_flow = flow_values_t[(layer + 1)*seq_len:, layer*seq_len:(layer + 1)*seq_len]
-    flow_relevance = final_layer_flow[output_index].to(device)
-    return flow_relevance
+    final_layer_flow = flow_values[(layer + 1)*seq_len:, layer*seq_len:(layer + 1)*seq_len]
+
+    return final_layer_flow[output_index]
 
 def process_attention_flow(attention: torch.Tensor, word_mappings: List[List[Tuple[str, int]]],
                            prompt_len: int, reduction: str = "mean") -> torch.Tensor:
@@ -97,9 +94,9 @@ def process_attention_flow(attention: torch.Tensor, word_mappings: List[List[Tup
     Expects attention tensor of shape [num_layers, batch_size, seq_len, seq_len].
     """
     print("initial attention shape:", attention.shape)
-    num_layers, batch_size, seq_len, _ = attention.shape
+    batch_size, seq_len, _ = attention.shape
     max_words = max(len(word_map) for word_map in word_mappings)
-    word_attentions = torch.zeros((num_layers, batch_size, seq_len, max_words), dtype=torch.float32)
+    word_attentions = torch.zeros((batch_size, max_words, seq_len), dtype=torch.float32)
     
     for sentence_idx, word_map in enumerate(word_mappings):
         for word_idx, (word, num_tokens) in enumerate(word_map):
@@ -107,46 +104,61 @@ def process_attention_flow(attention: torch.Tensor, word_mappings: List[List[Tup
             for n_token in range(num_tokens):
                 prev_tokens = word_map[:word_idx]
                 token_idx = sum(token[1] for token in prev_tokens) + n_token
-                token_attention = attention[:, sentence_idx, :, token_idx]  # [num_layers, seq_len]
+                token_attention = attention[sentence_idx, token_idx, :] #now we index dim 1 instead of 2 like in raw attention because flow is aggregated differently
                 token_attentions.append(token_attention)
-            token_attentions = torch.stack(token_attentions, dim=-1)  # [num_layers, seq_len, num_tokens]
+                print(token_attention)
+
+            token_attentions = torch.stack(token_attentions)  # [seq_len, num_tokens]
             if reduction == "mean":
-                word_attention = token_attentions.mean(dim=-1)  # [num_layers, seq_len]
+                word_attention = token_attentions.mean(dim=0)  # [seq_len]
             elif reduction == "max":
-                word_attention = token_attentions.max(dim=-1)[0]
+                word_attention = token_attentions.max(dim=0)[0]
             else:
                 raise ValueError("Reduction method must be either 'mean' or 'max'")
-            word_attentions[:, sentence_idx, :, word_idx] = word_attention
-            
-    word_attentions = word_attentions.mean(dim=2)  # [num_layers, batch_size, max_words]
-    # Remove prompt words (assumed to be first prompt_len tokens)
-    return word_attentions[:, :, prompt_len:]
+        if sentence_idx == 0:
+            break
+
+            word_attentions[sentence_idx, word_idx, :] = word_attention
+    word_attentions = word_attentions.mean(dim=-1)  # [batch_size, max_words]
+    # Remove prompt words
+    return word_attentions[:, prompt_len:]  # [batch_size, max_words - prompt_len]
 
 if __name__ == "__main__":
     task = "task2"
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    # # Load the attention data (assumed already saved as torch tensors)
+    # # # Load the attention data (assumed already saved as torch tensors)
     loaded_data = torch.load(f"/scratch/7982399/thesis/outputs/{task}/raw/attention_data.pt")
-    attention_tensor = loaded_data['attention'].to(device)          # [num_layers, batch_size, num_heads, seq_len, seq_len]
-    input_ids = loaded_data['input_ids']                     # [batch_size, seq_len]
+    # attention_tensor = loaded_data['attention']            # [num_layers, batch_size, num_heads, seq_len, seq_len]
+    word_mappings = loaded_data['word_mappings']  # List of word mappings for each sentence
+    prompt_len = loaded_data['prompt_len']  # Length of the prompt
+    # input_ids = loaded_data['input_ids']                  # [batch_size, seq_len]
 
-    _, batch_size, _, seq_len, _ = attention_tensor.shape
-    flow_results = torch.zeros((batch_size, seq_len, seq_len), dtype=torch.float32, device=device)
-    checkpoint_file = f"/scratch/7982399/thesis/outputs/{task}/flow/attention_flow_checkpoint.pt"
+    # _, batch_size, _, seq_len, _ = attention_tensor.shape
+    # flow_results = torch.zeros((batch_size, seq_len, seq_len), dtype=torch.float32)
+    # checkpoint_file = f"/scratch/7982399/thesis/outputs/{task}/flow/attention_flow_checkpoint.pt"
 
-    for batch in range(batch_size):
-        if os.path.exists(checkpoint_file):
-            # Optionally load previously computed progress here
-            flow_results = torch.load(checkpoint_file)
-        else:
-            print("Checkpoint file not found, starting from scratch.")
+    # for batch in range(batch_size):
+    #     if os.path.exists(checkpoint_file):
+    #         # Optionally load previously computed progress here
+    #         flow_results = torch.load(checkpoint_file)
+    #     else:
+    #         print("Checkpoint file not found, starting from scratch.")
 
-        attention_tensor = attention_tensor[:, batch, ...]      # Now shape: [num_layers, num_heads, seq_len, seq_len]
-        input_ids_batch = input_ids[batch]                            # Now shape: [seq_len]
-        token_labels = [str(token.item()) for token in input_ids_batch]
+    #     attention_tensor = attention_tensor[:, batch, ...]      # Now shape: [num_layers, num_heads, seq_len, seq_len]
+    #     input_ids_batch = input_ids[batch]                            # Now shape: [seq_len]
+    #     token_labels = [str(token.item()) for token in input_ids_batch]
 
-        for output_idx in range(seq_len):
-            # Compute flow relevance for the last layer
-            flow = get_flow_relevance(attention_tensor, token_labels, layer=31, output_index=output_idx, device=device)
-            flow_results[batch, output_idx, :] = flow
-        torch.save(flow_results, checkpoint_file)  # Save progress
+    #     for output_idx in range(seq_len):
+    #         # Compute flow relevance for the last layer
+    #         flow = get_flow_relevance(attention_tensor, token_labels, layer=31, output_index=output_idx)
+    #         flow_results[batch, output_idx, :] = flow
+    #         torch.save(flow_results, checkpoint_file)  # Save progress
+
+    flow = torch.load(f"/scratch/7982399/thesis/outputs/{task}/flow/attention_flow_checkpoint.pt")
+    # print(flow.shape)
+    # print(flow[0])
+    flow_processed = process_attention_flow(flow, word_mappings, prompt_len, reduction="max")
+    # print(flow_processed.shape)
+    # torch.save(flow_processed, f"/scratch/7982399/thesis/outputs/{task}/flow/attention_flow_processed.pt")
+    #flow_processed = torch.load(f"/scratch/7982399/thesis/outputs/{task}/flow/attention_flow_processed.pt")
+    # print(flow_processed.shape)
+    # print(flow_processed[0])

@@ -81,20 +81,26 @@ def plot_pca_correlations(results_df, method='pearson', save_dir=None):
         plt.savefig(f"{save_dir}/pca_corr_{method}.png")
     plt.show()
 
-def run_analysis_with_pca(task: str, variance_threshold=0.95, save_dir=None):
+def run_analysis_with_pca(task: str, attn_method:str, variance_threshold=0.95, save_dir=None):
     human_df = pd.read_csv('data/task2/processed/processed_participants.csv')
-    model_data = torch.load(f"/scratch/7982399/thesis/outputs/{task}/{attn_method}/attention_processed.npy")
-    attention = model_data['attention_processed'].cpu()
+    model_data = torch.load(f"/scratch/7982399/thesis/outputs/{task}/{attn_method}/attention_flow_processed.pt")
+    if attn_method == "raw":
+        attention = model_data['attention_processed'].cpu()
+    elif attn_method == "flow":
+        print(model_data)
+        attention = torch.unsqueeze(model_data, 0) if model_data.ndim == 2 else model_data.cpu()
     
     token_indices = list(zip(human_df['Sent_ID'], human_df['Word_ID']))
     sent_ids, word_ids = zip(*token_indices)
     sent_ids = torch.tensor(sent_ids, dtype=torch.long)
     word_ids = torch.tensor(word_ids, dtype=torch.long)
     
-    attention_nonpadded = attention[:, sent_ids, word_ids].numpy()
+    attention_nonpadded = attention[:, sent_ids, word_ids]
+    print(attention_nonpadded.shape)
+    print(attention_nonpadded[:, 0])
     
     # Apply PCA with dynamic component selection
-    pca_df, pca, explained_variance, cumulative_variance = apply_pca(human_df, ['nFixations', 'meanPupilSize', 'GD', 'TRT', 'FFD', 'SFD', 'GPT'], variance_threshold)
+    pca_df, pca, explained_variance, cumulative_variance = apply_pca(human_df, ['nFixations', 'meanPupilSize', 'GD', 'TRT', 'FFD', 'SFD', 'GPT'])
     
     # Correlation analysis with PCA components
     results_df = correlation_analysis(attention_nonpadded, pca_df)
