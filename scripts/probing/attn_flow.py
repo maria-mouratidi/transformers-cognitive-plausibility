@@ -130,62 +130,62 @@ if __name__ == "__main__":
     task = "task2"
 
     checkpoint_file = f"/scratch/7982399/thesis/outputs/{task}/flow/attention_flow_mp.pt"
-    flow = torch.load(checkpoint_file)  # Check if the file exists
-    print(torch.any(flow != 0, dim=(1, 2)).nonzero(as_tuple=True)[0])
-    print(torch.all(flow[23] == 0, dim=0).nonzero(as_tuple=True)[0])
+    # flow = torch.load(checkpoint_file)  # Check if the file exists
+    # print(torch.any(flow != 0, dim=(1, 2)).nonzero(as_tuple=True)[0])
+    # print(torch.all(flow[25] == 0, dim=0).nonzero(as_tuple=True)[0])
 
-    # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    # print(f"Using device: {device}")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
 
-    # # Load data
-    # loaded_data = torch.load(f"/scratch/7982399/thesis/outputs/{task}/raw/attention_data.pt", map_location=device)
-    # attention_tensor = loaded_data['attention'].to(device)  # [num_layers, batch_size, num_heads, seq_len, seq_len]
-    # input_ids = loaded_data['input_ids'].to(device)         # [batch_size, seq_len]
+    # Load data
+    loaded_data = torch.load(f"/scratch/7982399/thesis/outputs/{task}/raw/attention_data.pt", map_location=device)
+    attention_tensor = loaded_data['attention'].to(device)  # [num_layers, batch_size, num_heads, seq_len, seq_len]
+    input_ids = loaded_data['input_ids'].to(device)         # [batch_size, seq_len]
 
-    # _, batch_size, _, seq_len, _ = attention_tensor.shape
+    _, batch_size, _, seq_len, _ = attention_tensor.shape
 
-    # # Load or init checkpoint
-    # if os.path.exists(checkpoint_file):
-    #     flow_results = torch.load(checkpoint_file, map_location=device)
-    # else:
-    #     flow_results = torch.zeros((batch_size, seq_len, seq_len), dtype=torch.float32, device=device)
+    # Load or init checkpoint
+    if os.path.exists(checkpoint_file):
+        flow_results = torch.load(checkpoint_file, map_location=device)
+    else:
+        flow_results = torch.zeros((batch_size, seq_len, seq_len), dtype=torch.float32, device=device)
 
-    # # Save utility
-    # def save_checkpoint(tensor, path):
-    #     temp_path = path + ".tmp"
-    #     torch.save(tensor, temp_path)
-    #     os.replace(temp_path, path)
+    # Save utility
+    def save_checkpoint(tensor, path):
+        temp_path = path + ".tmp"
+        torch.save(tensor, temp_path)
+        os.replace(temp_path, path)
 
-    # # Compute one output index
-    # def compute_output(args):
-    #     attention_np, token_labels, output_idx = args
-    #     attention_tensor_cpu = torch.from_numpy(attention_np)
-    #     return output_idx, get_flow_relevance(attention_tensor_cpu, token_labels, layer=31, output_index=output_idx)
+    # Compute one output index
+    def compute_output(args):
+        attention_np, token_labels, output_idx = args
+        attention_tensor_cpu = torch.from_numpy(attention_np)
+        return output_idx, get_flow_relevance(attention_tensor_cpu, token_labels, layer=31, output_index=output_idx)
 
-    # # Cap CPU usage slightly below max to avoid oversubscription
-    # MAX_WORKERS = min(30, mp.cpu_count())
+    # Cap CPU usage slightly below max to avoid oversubscription
+    MAX_WORKERS = min(30, mp.cpu_count())
 
-    # # Main loop: batch-wise
-    # for batch in range(14, batch_size):
+    # Main loop: batch-wise
+    for batch in range(26, batch_size): #13 and 25 batches may be incomplete
 
-    #     batch_attention_tensor = attention_tensor[:, batch].cpu()  # [num_layers, num_heads, seq_len, seq_len]
-    #     input_ids_batch = input_ids[batch]
-    #     token_labels = [str(token.item()) for token in input_ids_batch]
+        batch_attention_tensor = attention_tensor[:, batch].cpu()  # [num_layers, num_heads, seq_len, seq_len]
+        input_ids_batch = input_ids[batch]
+        token_labels = [str(token.item()) for token in input_ids_batch]
 
-    #     # Find which output indices still need processing
-    #     remaining_outputs = [
-    #         (batch_attention_tensor.numpy(), token_labels, output_idx)
-    #         for output_idx in range(seq_len)
-    #         if torch.all(flow_results[batch, output_idx] == 0)
-    #     ]
+        # Find which output indices still need processing
+        remaining_outputs = [
+            (batch_attention_tensor.numpy(), token_labels, output_idx)
+            for output_idx in range(seq_len)
+            if torch.all(flow_results[batch, output_idx] == 0)
+        ]
 
-    #     if not remaining_outputs:
-    #         continue
+        if not remaining_outputs:
+            continue
 
-    #     # Parallel processing
-    #     with mp.Pool(processes=MAX_WORKERS) as pool:
-    #         results = pool.map(compute_output, remaining_outputs)
+        # Parallel processing
+        with mp.Pool(processes=MAX_WORKERS) as pool:
+            results = pool.map(compute_output, remaining_outputs)
 
-    #     for output_idx, flow in results:
-    #         flow_results[batch, output_idx] = flow
-    #         save_checkpoint(flow_results, checkpoint_file)
+        for output_idx, flow in results:
+            flow_results[batch, output_idx] = flow
+            save_checkpoint(flow_results, checkpoint_file)

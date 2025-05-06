@@ -20,7 +20,7 @@ with open("materials/relations_task_specific.csv", encoding='latin-1') as f:
     }
 
 # Load sentences from eye-gaze data
-with open("materials/sentences_task3.json", encoding='utf-8') as f:
+with open("materials/sentences_task3_unlabeled.json", encoding='utf-8') as f:
     sentences = json.load(f)
 
 
@@ -33,14 +33,14 @@ manual_relations ={
 matched = [
     {
         'sentence': tokens,
-        'relation_type': manual_relations.get(
-            normalize(tokens),  # Check manual relations that are added due to typos
-            csv_lookup.get(normalize(tokens), "UNKNOWN")  # Fallback to csv_lookup
+        'relation_type': (
+            manual_relations.get(normalize(tokens), csv_lookup.get(normalize(tokens), "UNKNOWN"))
+            .replace("JOB_TITLE", "OCCUPATION") #this way all relations consist of one word without losing meaning
         )
     }
     for tokens in sentences
 ]
 
-with open("materials/labeled_sentences_task3.json", "w", encoding='utf-8') as f:
+with open("materials/sentences_task3.json", "w", encoding='utf-8') as f:
     json.dump(matched, f, ensure_ascii=False, indent=2)
 

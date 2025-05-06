@@ -14,8 +14,8 @@ def load_processed_data(attn_method: str, task: str):
     human_df = pd.read_csv(f'data/{task}/processed/processed_participants.csv')
     if subset:
         human_df = human_df[human_df['Sent_ID'] < subset]  # Subset
-    model_data = torch.load(f"/scratch/7982399/thesis/outputs/{task}/{attn_method}/attention_processed.pt")
-    attention = model_data['attention_processed'].cpu()
+    model_data = torch.load(f"/scratch/7982399/thesis/outputs/{task}/{attn_method}/attention_data.pt")
+    attention = model_data['attention'].cpu()
 
     return human_df, attention
 
@@ -94,4 +94,5 @@ def run_full_analysis(attn_method: str, task: str,):
     sig.to_csv(f"{save_dir}/significant_correlations.csv", index=False)
 
 if __name__ == "__main__":
-    run_full_analysis(attn_method = "raw", task="task3")
+    load_processed_data(attn_method = "raw", task="task3")
+    #run_full_analysis(attn_method = "raw", task="task3")

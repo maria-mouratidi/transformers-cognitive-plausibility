@@ -24,21 +24,16 @@ def adjust_sent_id(missing_start, missing_end, sent_id):
 # p6 task 2: 1 - 50
 # p11 task 2: 51 - 100
 # p3 task 3: 179 - 225
-# p7 task 3: 360 - 407 AND by observation: 317 - 364 #316, 363 kinda works  #shift is 47 prob true
+# p7 task 3: 360 - 407 AND by observation: 316 - 363
 # p11 task 3: 271 - 314
 # p11 task 3: 363 - 407
-
-print(df[(df['participantID'] == 7) & 
-                 (df['Sent_ID'].str.split('_').str[0].astype(int) >= 268) & 
-                 (df['Sent_ID'].str.split('_').str[0].astype(int) <= 315)]
-)
 
 if task == "task2":
     df.loc[df['participantID'] == 6, 'Sent_ID'] = df.loc[df['participantID'] == 6, 'Sent_ID'].map(lambda s: adjust_sent_id(1, 50, s))
     df.loc[df['participantID'] == 11, 'Sent_ID'] = df.loc[df['participantID'] == 11, 'Sent_ID'].map(lambda s: adjust_sent_id(51, 100, s))
 elif task == "task3":
     df.loc[df['participantID'] == 3, 'Sent_ID'] = df.loc[df['participantID'] == 3, 'Sent_ID'].map(lambda s: adjust_sent_id(179, 225, s))
-    df.loc[df['participantID'] == 7, 'Sent_ID'] = df.loc[df['participantID'] == 7, 'Sent_ID'].map(lambda s: adjust_sent_id(360, 407, s))
+    df.loc[df['participantID'] == 7, 'Sent_ID'] = df.loc[df['participantID'] == 7, 'Sent_ID'].map(lambda s: adjust_sent_id(316, 363, s))
     df.loc[df['participantID'] == 11, 'Sent_ID'] = df.loc[df['participantID'] == 11, 'Sent_ID'].map(lambda s: adjust_sent_id(271, 314, s))
     df.loc[df['participantID'] == 11, 'Sent_ID'] = df.loc[df['participantID'] == 11, 'Sent_ID'].map(lambda s: adjust_sent_id(363, 407, s))
 
@@ -72,7 +67,7 @@ sentences = sentence_items.groupby('Sent_ID')['Word'].apply(list).tolist()
 sentences = [[word for word in sentence if pd.notnull(word)] for sentence in sentences]
 
 # Save the cleaned sentences to a JSON file
-with open(f'materials/sentences_{task}.json', 'w') as f:
+with open(f'materials/sentences_{task}_unlabeled.json', 'w') as f:
     json.dump(sentences, f, indent=4)
 
 # Group by Sent_ID and Word_ID to average across participants
