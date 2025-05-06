@@ -23,23 +23,27 @@ def plot_regplots(human_df, model_values, features, layer_idx, save_dir=None):
         plt.close()
 
 # In your `corr_plots.py`
-def plot_feature_corr(results_df, method='pearson', save_dir=None, significance_threshold=0.05):
-    pivot = results_df.pivot(index='layer', columns='feature', values=f'{method}_r')
-    pvals = results_df.pivot(index='layer', columns='feature', values=f'{method}_p_value')
+def plot_feature_corr(results_df, method='pearson', pca=False, save_dir=None, significance_threshold=0.05):
+    print(results_df.columns)
+
+    col = 'principal_component' if pca else 'feature'
+    pivot = results_df.pivot(index='layer', columns=col, values=f'{method}_r')
+    pvals = results_df.pivot(index='layer', columns=col, values=f'{method}_p_value')
 
     # Create mask for non-significant p-values
     mask = pvals >= significance_threshold
 
     plt.figure(figsize=(12, 8))
     sns.heatmap(pivot, mask=mask, annot=True, fmt=".2f", cmap="coolwarm", center=0, cbar_kws={'label': f'{method.title()} r'})
-    plt.title(f"Layer-wise Attention vs Human Feature Correlations ({method.title()}, p<{significance_threshold})")
+    plt.title(f"Layer-wise Attention vs Eye-Gaze Feature Correlations ({method.title()}, p<{significance_threshold})")
     plt.ylabel("Transformer Layer")
-    plt.xlabel("Human Features")
+    plt.xlabel("Eye-Gaze Features")
     plt.tight_layout()
-    
+
+    filename = f"pca_corr_{method}.png" if pca else f"corr_{method}.png"  
     if save_dir:
         os.makedirs(save_dir, exist_ok=True)
-        plt.savefig(f"{save_dir}/corr_{method}.png")
+        plt.savefig(f"{save_dir}/{filename}")
     plt.show()
     plt.close()
 
@@ -61,4 +65,5 @@ def plot_eyegaze_corr(human_df, features, save_dir=None):
     
     plt.show()
     plt.close()
+
 

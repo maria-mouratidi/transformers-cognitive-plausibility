@@ -58,7 +58,6 @@ def exploratory_analysis_for_layers(human_df, attention, layers_to_analyze, save
 
 def run_full_analysis(attn_method: str, task: str,):
     human_df, attention = load_processed_data(attn_method=attn_method, task=task)
-    return
     print(f"Attention shape: {attention.shape}")
 
     num_layers, num_sentences, max_seq_len = attention.shape
@@ -72,7 +71,7 @@ def run_full_analysis(attn_method: str, task: str,):
     # Efficient batch indexing in PyTorch
     attention_nonpadded = attention[:, sent_ids, word_ids]#.numpy()
     # --- Exploratory Analysis ---
-    layers_to_analyze = [0, 31]
+    layers_to_analyze = [0, 15, 31]
     save_dir = f"outputs/{task}/{attn_method}/analysis_plots"
     os.makedirs(save_dir, exist_ok=True)
     #save_dir = None
@@ -82,8 +81,8 @@ def run_full_analysis(attn_method: str, task: str,):
     results_df = correlation_analysis(attention_nonpadded, human_df)
     
     # --- Global Heatmaps ---
-    plot_feature_corr(results_df, 'pearson', save_dir)
-    plot_feature_corr(results_df, 'spearman', save_dir)
+    plot_feature_corr(results_df, method = 'pearson', save_dir = save_dir)
+    plot_feature_corr(results_df, method ='spearman', save_dir = save_dir)
     plot_eyegaze_corr(human_df, FEATURES, save_dir)
     
     # --- Filter & print significant correlations ---
@@ -92,7 +91,7 @@ def run_full_analysis(attn_method: str, task: str,):
         (results_df['pearson_p_value'] < significance_threshold) &
         (results_df['spearman_p_value'] < significance_threshold)
     ]
-    sig.to_csv(save_dir, index=False)
+    sig.to_csv(f"{save_dir}/significant_correlations.csv", index=False)
 
 if __name__ == "__main__":
-    run_full_analysis(attn_method = "flow", task="task2")
+    run_full_analysis(attn_method = "raw", task="task3")

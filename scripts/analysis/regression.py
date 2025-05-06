@@ -27,7 +27,7 @@ gaze_features = ['nFixations', 'meanPupilSize', 'GD', 'TRT', 'FFD', 'SFD', 'GPT'
 y_gaze = gaze_df[gaze_features]
 
 # Apply PCA to gaze features (for Model b and c)
-y_pca, pca_obj, explained_var, cum_var = apply_pca(gaze_df, gaze_features)
+y_pca, pca_obj, explained_var, cum_var = apply_pca(gaze_df, gaze_features) # Figure out n_components based on 0.95 explained variance
 
 # ------------------ Attention Features ------------------
 # Extract token mappings
@@ -71,9 +71,9 @@ X_test_attn_scaled = scaler_attn.transform(X_test_attn)
 # ------------------ Train and Evaluate Models ------------------
 
 # --- Model a: Predict all gaze features using Text Only ---
-model_a = LinearRegression()
-model_a.fit(X_train_text_scaled, y_train_gaze)
-preds_a = model_a.predict(X_test_text_scaled)
+text_to_gaze_model = LinearRegression()
+text_to_gaze_model.fit(X_train_text_scaled, y_train_gaze)
+preds_a = text_to_gaze_model.predict(X_test_text_scaled)
 
 # mse_a = {
 #     feature: mean_squared_error(y_test_gaze[feature], preds_a[:, idx])
@@ -86,9 +86,10 @@ preds_a = model_a.predict(X_test_text_scaled)
 # print(f"Average MSE for Model a: {avg_mse_a:.4f}\n")
 
 # --- Model b: Predict PCA targets using Text Only ---
-model_b = LinearRegression()
-model_b.fit(X_train_text_scaled, y_train_pca)
-preds_b = model_b.predict(X_test_text_scaled)
+text_to_pca_model = LinearRegression()
+text_to_pca_model.fit(X_train_text_scaled, y_train_pca)
+preds_b = text_to_pca_model.predict(X_test_text_scaled)
+preds_b_inversed = pca_obj.inverse_transform(preds_b) # Invert PCA predictions to the original gaze feature space for fair comparison
 
 # mse_b = {
 #     f'PC{i+1}': mean_squared_error(y_test_pca.iloc[:, i], preds_b[:, i])
@@ -101,8 +102,6 @@ preds_b = model_b.predict(X_test_text_scaled)
 # print(f"Average MSE for Model b: {avg_mse_b:.4f}\n")
 
 # print("Predicting (Inversed) PCA Components with Text Features (MSEs):")
-preds_b_inversed = pca_obj.inverse_transform(preds_b) # Invert PCA predictions to the original gaze feature space for fair comparison
-
 # mse_b_inversed = {
 #     feature: mean_squared_error(y_test_gaze[feature], preds_b_inversed[:, idx])
 #     for idx, feature in enumerate(gaze_features)
@@ -113,9 +112,10 @@ preds_b_inversed = pca_obj.inverse_transform(preds_b) # Invert PCA predictions t
 # print(f"Average MSE for (Inversed) Model b: {avg_mse_b_inversed:.4f}\n")
 
 # --- Model c: Predict PCA targets using Text + Attention ---
-model_c = LinearRegression()
-model_c.fit(X_train_attn_scaled, y_train_pca)
-preds_c = model_c.predict(X_test_attn_scaled)
+attn_to_pca_model = LinearRegression()
+attn_to_pca_model.fit(X_train_attn_scaled, y_train_pca)
+preds_c = attn_to_pca_model.predict(X_test_attn_scaled)
+preds_c_inversed = pca_obj.inverse_transform(preds_c) # Invert PCA predictions to the original gaze feature space for fair comparison
 
 # mse_c = {
 #     f'PC{i+1}': mean_squared_error(y_test_pca.iloc[:, i], preds_c[:, i])
@@ -126,6 +126,11 @@ preds_c = model_c.predict(X_test_attn_scaled)
 #     print(f"{pc}: {mse:.4f}")
 # avg_mse_c = np.mean(list(mse_c.values()))
 # print(f"Average MSE for Model c: {avg_mse_c:.4f}\n")
+
+# --- Model d: Predict gaze features using Text + Attention ---
+attn_to_text_model = LinearRegression()
+attn_to_text_model.fit(X_train_attn_scaled, y_train_gaze)
+preds_d = attn_to_text_model.predict(X_test_attn_scaled)
 
 # --- Baseline Model: Predicting Mean of PCA components ---
 baseline_mean = y_train_pca.mean(axis=0)
@@ -143,13 +148,13 @@ baseline_preds = np.tile(baseline_mean, (y_test_pca.shape[0], 1))
 
 # ------------------ Statistical Comparisons ------------------
 
-# ------------------ Statistical Comparisons ------------------
-
 # Per-sample MSEs
 errors_a = np.mean((preds_a - y_test_gaze.values)**2, axis=1)
 errors_b = np.mean((preds_b - y_test_pca.values)**2, axis=1)
 errors_c = np.mean((preds_c - y_test_pca.values)**2, axis=1)
+errors_d = np.mean((preds_d - y_test_gaze.values)**2, axis=1)
 errors_b_original = np.mean((preds_b_inversed - y_test_gaze.values)**2, axis=1)
+errors_c_original = np.mean((preds_c_inversed - y_test_gaze.values)**2, axis=1)
 baseline_errors = np.mean((baseline_preds - y_test_pca.values)**2, axis=1)  # Baseline model predicts the mean of PCA components
 
 # --- Gaze Model vs PCA Model in original gaze space ---
@@ -171,6 +176,16 @@ print(f"- Wilcoxon signed-rank test: statistic = {w_stat:.4f}, p-value = {w_p_va
 print("Error statistics:")
 print(f"- Model b (PCA): mean = {np.mean(errors_b):.4f}, std = {np.std(errors_b):.4f}")
 print(f"- Model c (Text + Attention): mean = {np.mean(errors_c):.4f}, std = {np.std(errors_c):.4f}\n")
+
+# --- Attention enhanced Gaze Model vs Attention enhanced PCA Model ---
+print("Attention enhanced Gaze Model vs Attention enhanced PCA Model in original gaze space")
+t_stat, p_value = ttest_rel(errors_d, errors_c_original)
+print(f"- Paired t-test: t-statistic = {t_stat:.4f}, p-value = {p_value:.4f}")
+w_stat, w_p_val = wilcoxon(errors_d, errors_c_original)
+print(f"- Wilcoxon signed-rank test: statistic = {w_stat:.4f}, p-value = {w_p_val:.4f}")
+print("Error statistics:")
+print(f"- Model d (Gaze): mean = {np.mean(errors_d):.4f}, std = {np.std(errors_d):.4f}")
+print(f"- Model c (Inversed PCA): mean = {np.mean(errors_c_original):.4f}, std = {np.std(errors_c_original):.4f}\n")
 
 # --- Baseline vs Attention enhanced PCA Model ---
 print("Baseline vs Attention enhanced PCA Model")

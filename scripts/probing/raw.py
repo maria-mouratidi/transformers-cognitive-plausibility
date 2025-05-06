@@ -149,15 +149,17 @@ subset = False # Set to False to process all sentences
 
 if __name__ == "__main__":
 
-    task = "task2" # None, task2, task3
-    model_type = "causal" #'qa' for task3
+    task = "task3" # None, task2, task3
+    model_type = "qa" #'qa' for task3
 
     model, tokenizer = load_llama(model_type=model_type)
     save_model(model, tokenizer, f"/scratch/7982399/hf_cache/{task}")
 
     # Load the sentences
-    with open('materials/sentences.json', 'r') as f:
+    with open(f'materials/sentences_{task}.json', 'r') as f:
         sentences = json.load(f)
+
+    print(sentences)
     
     # Subset for testing
     if subset:

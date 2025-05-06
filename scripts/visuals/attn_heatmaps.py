@@ -49,15 +49,16 @@ def plot_attention_heatmaps(attention_tensor, sentence, batch_idx, save_dir=None
 
 if __name__ == "__main__":
     import json
+    task = "task2"  # Specify the task
 
     # Load processed attention tensor and sentences
-    data = torch.load("/scratch/7982399/thesis/outputs/attention_processed.pt")  # Load the attention tensor
+    data = torch.load(f"/scratch/7982399/thesis/outputs/{task}/attention_processed.pt")  # Load the attention tensor
     
     # Extract each component
     attention = data['attention_processed']
     prompt_len = data['prompt_len']
     
-    with open('materials/sentences.json', 'r') as f:
+    with open(f'materials/sentences_{task}.json', 'r') as f:
         sentences = json.load(f)
 
     if subset:
@@ -66,4 +67,4 @@ if __name__ == "__main__":
     #sentences = pad_lists(sentences, max_sent_len)
     # Loop through sentences in the batch and plot attention heatmaps
     for batch_idx in range(batch_size):
-        plot_attention_heatmaps(attention, sentences[batch_idx], batch_idx=batch_idx, save_dir="/scratch/7982399/thesis/outputs/attention_plots")
+        plot_attention_heatmaps(attention, sentences[batch_idx], batch_idx=batch_idx, save_dir=f"/scratch/7982399/thesis/outputs/{task}/attention_plots")

@@ -1,7 +1,8 @@
 #!/bin/bash
 #SBATCH --job-name=probing
 #SBATCH --mem=32G
-#SBATCH --time=24:00:00
+#SBATCH --time=48:00:00
+#SBATCH --cpus-per-task=30
 #SBATCH --partition=gpua100
 #SBATCH --output=/dev/null       # Disables SLURM standard output file
 #SBATCH --error=/dev/null        # Disables SLURM error output file

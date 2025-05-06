@@ -81,7 +81,7 @@ if __name__ == "__main__":
     # model, tokenizer = load_llama(model_type=model_type)
 
     # Load the sentences
-    with open('materials/sentences.json', 'r') as f:
+    with open(f'materials/sentences_{task}.json', 'r') as f:
         sentences = json.load(f)
     
     # Subset for testing
