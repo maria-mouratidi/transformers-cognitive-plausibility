@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import seaborn as sns
 import os
+import numpy as np
 
 def plot_regplots(human_df, model_values, features, layer_idx, save_dir=None):
     for feature_name in features:

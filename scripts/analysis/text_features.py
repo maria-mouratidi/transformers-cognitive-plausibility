@@ -75,19 +75,19 @@ def get_surprisals(
 subset = False
 if __name__ == "__main__":
 
-    task = "task2"
+    task = "task3"
     attention_method = "raw"
-    # model_type = "causal" #'qa' for task3
-    # model, tokenizer = load_llama(model_type=model_type)
+    model_type = "causal" #'qa' for task3
+    model, tokenizer = load_llama(model_type=model_type)
 
     # Load the sentences
     with open(f'materials/sentences_{task}.json', 'r') as f:
         sentences = json.load(f)
     
-    # Subset for testing
-    if subset:
-        print(f"Using subset of {subset} sentences")
-        sentences = sentences[:subset]
+    # # Subset for testing
+    # if subset:
+    #     print(f"Using subset of {subset} sentences")
+    #     sentences = sentences[:subset]
 
     # loaded_data = torch.load(f"/scratch/7982399/thesis/outputs/{task}/{attention_method}/attention_data.pt")
     # attention = loaded_data['attention']
@@ -106,7 +106,7 @@ if __name__ == "__main__":
     for sentence_idx, sentence in enumerate(sentences):
         sentence_surprisals = surprisals[sentence_idx]
         # Extract features for each token
-        for word_idx, (word, (_, surprisal)) in enumerate(zip(sentence, sentence_surprisals)):
+        for word_idx, (word, (_, surprisal)) in enumerate(zip(sentence['sentence'], sentence_surprisals)):
                 frequency = get_frequency(word)
                 length = get_length(word)
                 role = get_role(word)
@@ -123,7 +123,7 @@ if __name__ == "__main__":
 
     df = pd.DataFrame(features)
     df.sort_values(['Sent_ID', 'Word_ID'], inplace=True)
-    df.to_csv('materials/text_features.csv', index=False)
+    df.to_csv(f'materials/text_features_{task}.csv', index=False)
 
 
 

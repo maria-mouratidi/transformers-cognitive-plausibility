@@ -12,10 +12,11 @@ FEATURES = ['nFixations', 'meanPupilSize', 'GD', 'TRT', 'FFD', 'SFD', 'GPT']
 
 def load_processed_data(attn_method: str, task: str):
     human_df = pd.read_csv(f'data/{task}/processed/processed_participants.csv')
+    human_df.fillna(0, inplace=True) #TODO: temporary fix for NaN values
     if subset:
         human_df = human_df[human_df['Sent_ID'] < subset]  # Subset
-    model_data = torch.load(f"/scratch/7982399/thesis/outputs/{task}/{attn_method}/attention_data.pt")
-    attention = model_data['attention'].cpu()
+    model_data = torch.load(f"/scratch/7982399/thesis/outputs/{task}/{attn_method}/attention_processed.pt")
+    attention = model_data['attention_processed'].cpu()
 
     return human_df, attention
 
@@ -75,7 +76,7 @@ def run_full_analysis(attn_method: str, task: str,):
     save_dir = f"outputs/{task}/{attn_method}/analysis_plots"
     os.makedirs(save_dir, exist_ok=True)
     #save_dir = None
-    #exploratory_analysis_for_layers(human_df, attention_nonpadded, layers_to_analyze, save_dir)
+    exploratory_analysis_for_layers(human_df, attention_nonpadded, layers_to_analyze, save_dir)
     
     # --- Correlation Analysis across ALL layers ---
     results_df = correlation_analysis(attention_nonpadded, human_df)
@@ -93,6 +94,5 @@ def run_full_analysis(attn_method: str, task: str,):
     ]
     sig.to_csv(f"{save_dir}/significant_correlations.csv", index=False)
 
-if __name__ == "__main__":
-    load_processed_data(attn_method = "raw", task="task3")
-    #run_full_analysis(attn_method = "raw", task="task3")
+if __name__ == "__main__": 
+    run_full_analysis(attn_method = "raw", task="task3")

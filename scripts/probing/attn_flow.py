@@ -49,7 +49,7 @@ def compute_node_flow(G: nx.DiGraph, labels_to_index: Dict[str, int], input_node
                 flow_values[u][pre_layer * seq_len + v] = float(flow_value)
                 
             # Normalize the current output token's flow values
-            flow_values[u] /= flow_values[u].sum() 
+            flow_values[u] /= flow_values[u].sum()
 
     return flow_values
 
@@ -95,7 +95,7 @@ def process_attention_flow(attention: torch.Tensor, word_mappings: List[List[Tup
     Extract word-level attention from token-level attention weights for attention flow.
     Expects attention tensor of shape [num_layers, batch_size, seq_len, seq_len].
     """
-    print("initial attention shape:", attention.shape)
+    print("initial flow shape:", attention.shape)
     batch_size, seq_len, _ = attention.shape
     max_words = max(len(word_map) for word_map in word_mappings)
     word_attentions = torch.zeros((batch_size, max_words, seq_len), dtype=torch.float32)
@@ -107,6 +107,8 @@ def process_attention_flow(attention: torch.Tensor, word_mappings: List[List[Tup
                 prev_tokens = word_map[:word_idx]
                 token_idx = sum(token[1] for token in prev_tokens) + n_token
                 token_attention = attention[sentence_idx, token_idx, :] #now we index dim 1 instead of 2 like in raw attention because flow is aggregated differently
+                #print("word_idx", word_idx, "word:", word, "prev tokens:", prev_tokens, "token_idx:", token_idx)
+                #print(token_attention)
                 token_attentions.append(token_attention)
 
             token_attentions = torch.stack(token_attentions)  # [seq_len, num_tokens]
@@ -116,11 +118,10 @@ def process_attention_flow(attention: torch.Tensor, word_mappings: List[List[Tup
                 word_attention = token_attentions.max(dim=0)[0]
             else:
                 raise ValueError("Reduction method must be either 'mean' or 'max'")
-        if sentence_idx == 0:
-            break
-
+            mean_incoming_attention = word_attention[:].mean(-1)
             word_attentions[sentence_idx, word_idx, :] = word_attention
-    word_attentions = word_attentions.mean(dim=-1)  # [batch_size, max_words]
+    
+    word_attentions = word_attentions[:word_idx].mean(dim=-1)  # [batch_size, max_words]
     # Remove prompt words
     return word_attentions[:, prompt_len:]  # [batch_size, max_words - prompt_len]
 
@@ -129,10 +130,10 @@ def process_attention_flow(attention: torch.Tensor, word_mappings: List[List[Tup
 if __name__ == "__main__":
     task = "task2"
 
-    checkpoint_file = f"/scratch/7982399/thesis/outputs/{task}/flow/attention_flow_mp.pt"
-    # flow = torch.load(checkpoint_file)  # Check if the file exists
+    checkpoint_file = f"/scratch/7982399/thesis/outputs/{task}/flow/attention_processed.pt"
+    flow = torch.load(checkpoint_file)  # Check if the file exists
     # print(torch.any(flow != 0, dim=(1, 2)).nonzero(as_tuple=True)[0])
-    # print(torch.all(flow[25] == 0, dim=0).nonzero(as_tuple=True)[0])
+    # print(torch.all(flow[45] == 0, dim=0).nonzero(as_tuple=True)[0])
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
@@ -141,51 +142,54 @@ if __name__ == "__main__":
     loaded_data = torch.load(f"/scratch/7982399/thesis/outputs/{task}/raw/attention_data.pt", map_location=device)
     attention_tensor = loaded_data['attention'].to(device)  # [num_layers, batch_size, num_heads, seq_len, seq_len]
     input_ids = loaded_data['input_ids'].to(device)         # [batch_size, seq_len]
+    word_mappings = loaded_data['word_mappings']           # List of token counts for each word in each sentence
+    prompt_len = loaded_data['prompt_len']                 # Length of prompt
+    # _, batch_size, _, seq_len, _ = attention_tensor.shape
+    flow_processed = process_attention_flow(flow, word_mappings, prompt_len, reduction="max")
+    print(flow_processed[0])
+    # # Load or init checkpoint
+    # if os.path.exists(checkpoint_file):
+    #     flow_results = torch.load(checkpoint_file, map_location=device)
+    # else:
+    #     flow_results = torch.zeros((batch_size, seq_len, seq_len), dtype=torch.float32, device=device)
 
-    _, batch_size, _, seq_len, _ = attention_tensor.shape
+    # # Save utility
+    # def save_checkpoint(tensor, path):
+    #     temp_path = path + ".tmp"
+    #     torch.save(tensor, temp_path)
+    #     os.replace(temp_path, path)
 
-    # Load or init checkpoint
-    if os.path.exists(checkpoint_file):
-        flow_results = torch.load(checkpoint_file, map_location=device)
-    else:
-        flow_results = torch.zeros((batch_size, seq_len, seq_len), dtype=torch.float32, device=device)
+    # # Compute one output index
 
-    # Save utility
-    def save_checkpoint(tensor, path):
-        temp_path = path + ".tmp"
-        torch.save(tensor, temp_path)
-        os.replace(temp_path, path)
+    # def compute_output(args):
+    #     attention_np, token_labels, output_idx = args
+    #     attention_tensor_cpu = torch.from_numpy(attention_np)
+    #     return output_idx, get_flow_relevance(attention_tensor_cpu, token_labels, layer=31, output_index=output_idx)
 
-    # Compute one output index
-    def compute_output(args):
-        attention_np, token_labels, output_idx = args
-        attention_tensor_cpu = torch.from_numpy(attention_np)
-        return output_idx, get_flow_relevance(attention_tensor_cpu, token_labels, layer=31, output_index=output_idx)
+    # # Cap CPU usage slightly below max to avoid oversubscription
+    # MAX_WORKERS = min(30, mp.cpu_count())
 
-    # Cap CPU usage slightly below max to avoid oversubscription
-    MAX_WORKERS = min(30, mp.cpu_count())
+    # # Main loop: batch-wise
+    # for batch in range(43, batch_size): #13 and 25 batches may be incomplete
 
-    # Main loop: batch-wise
-    for batch in range(26, batch_size): #13 and 25 batches may be incomplete
+    #     batch_attention_tensor = attention_tensor[:, batch].cpu()  # [num_layers, num_heads, seq_len, seq_len]
+    #     input_ids_batch = input_ids[batch]
+    #     token_labels = [str(token.item()) for token in input_ids_batch]
 
-        batch_attention_tensor = attention_tensor[:, batch].cpu()  # [num_layers, num_heads, seq_len, seq_len]
-        input_ids_batch = input_ids[batch]
-        token_labels = [str(token.item()) for token in input_ids_batch]
+    #     # Find which output indices still need processing
+    #     remaining_outputs = [
+    #         (batch_attention_tensor.numpy(), token_labels, output_idx)
+    #         for output_idx in range(seq_len)
+    #         if torch.all(flow_results[batch, output_idx] == 0)
+    #     ]
 
-        # Find which output indices still need processing
-        remaining_outputs = [
-            (batch_attention_tensor.numpy(), token_labels, output_idx)
-            for output_idx in range(seq_len)
-            if torch.all(flow_results[batch, output_idx] == 0)
-        ]
+    #     if not remaining_outputs:
+    #         continue
 
-        if not remaining_outputs:
-            continue
+    #     # Parallel processing
+    #     with mp.Pool(processes=MAX_WORKERS) as pool:
+    #         results = pool.map(compute_output, remaining_outputs)
 
-        # Parallel processing
-        with mp.Pool(processes=MAX_WORKERS) as pool:
-            results = pool.map(compute_output, remaining_outputs)
-
-        for output_idx, flow in results:
-            flow_results[batch, output_idx] = flow
-            save_checkpoint(flow_results, checkpoint_file)
+    #     for output_idx, flow in results:
+    #         flow_results[batch, output_idx] = flow
+    #         save_checkpoint(flow_results, checkpoint_file)
