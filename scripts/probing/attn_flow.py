@@ -130,28 +130,59 @@ def process_attention_flow(attention: torch.Tensor, word_mappings: List[List[Tup
 if __name__ == "__main__":
     task = "task2"
 
-    checkpoint_file = f"/scratch/7982399/thesis/outputs/{task}/flow/attention_processed.pt"
+    checkpoint_file = f"/scratch/7982399/thesis/outputs/{task}/flow/attention_flow_mp.pt"
     flow = torch.load(checkpoint_file)  # Check if the file exists
-    # print(torch.any(flow != 0, dim=(1, 2)).nonzero(as_tuple=True)[0])
-    # print(torch.all(flow[45] == 0, dim=0).nonzero(as_tuple=True)[0])
+    print(torch.any(flow != 0, dim=(1, 2)).nonzero(as_tuple=True)[0])
+    print(torch.all(flow[84] == 0, dim=0).nonzero(as_tuple=True)[0])
+    # for i in range(50):
+    #     zeros_i = torch.all(flow[i] == 0, dim=0).nonzero(as_tuple=True)[0]
+    #     for j in range(50):
+    #         zeros_j = torch.all(flow[j] == 0, dim=0).nonzero(as_tuple=True)[0]
+    #         if i != j and zeros_i.shape[0] == zeros_j.shape[0]:
+    #             equal = print(torch.equal(flow[i], flow[j]))
+    #             if not equal:
+    #                 diff_mask = flow[i] != flow[j]
+    #                 diff_indices = diff_mask.nonzero(as_tuple=True)
+    #                 print(f"Tensors differ at {diff_mask.sum().item()} positions")
+                    
+    #                 # Filter differences that are in the first decimal place
+    #                 first_decimal_diffs = []
+    #                 for k in range(diff_mask.sum().item()):
+    #                     idx = tuple(dim[k].item() for dim in diff_indices)
+    #                     val_i = flow[i][idx].item()
+    #                     val_j = flow[j][idx].item()
+                        
+    #                     # Check if values differ in the first decimal place
+    #                     # Convert to int to check only the first decimal place (x10)
+    #                     if int(val_i * 100) != int(val_j * 100):
+    #                         first_decimal_diffs.append((idx, val_i, val_j))
+                    
+    #                 print(f"Found {len(first_decimal_diffs)} differences in the first decimal place")
+                    
+    #                 # Print up to 10 differences in the first decimal place
+    #                 max_samples = min(10, len(first_decimal_diffs))
+    #                 for k in range(max_samples):
+    #                     idx, val_i, val_j = first_decimal_diffs[k]
+    #                     idx_str = ", ".join(str(x) for x in idx)
+    #                     print(f"  Difference at [{idx_str}]: flow[{i}]={val_i}, flow[{j}]={val_j}")
+            
+    # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # print(f"Using device: {device}")
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device}")
-
-    # Load data
-    loaded_data = torch.load(f"/scratch/7982399/thesis/outputs/{task}/raw/attention_data.pt", map_location=device)
-    attention_tensor = loaded_data['attention'].to(device)  # [num_layers, batch_size, num_heads, seq_len, seq_len]
-    input_ids = loaded_data['input_ids'].to(device)         # [batch_size, seq_len]
-    word_mappings = loaded_data['word_mappings']           # List of token counts for each word in each sentence
-    prompt_len = loaded_data['prompt_len']                 # Length of prompt
+    # # Load data
+    # loaded_data = torch.load(f"/scratch/7982399/thesis/outputs/{task}/raw/attention_data.pt", map_location=device)
+    # attention_tensor = loaded_data['attention'].to(device)  # [num_layers, batch_size, num_heads, seq_len, seq_len]
+    # input_ids = loaded_data['input_ids'].to(device)         # [batch_size, seq_len]
+    # word_mappings = loaded_data['word_mappings']           # List of token counts for each word in each sentence
+    # prompt_len = loaded_data['prompt_len']                 # Length of prompt
     # _, batch_size, _, seq_len, _ = attention_tensor.shape
-    flow_processed = process_attention_flow(flow, word_mappings, prompt_len, reduction="max")
-    print(flow_processed[0])
-    # # Load or init checkpoint
-    # if os.path.exists(checkpoint_file):
-    #     flow_results = torch.load(checkpoint_file, map_location=device)
-    # else:
-    #     flow_results = torch.zeros((batch_size, seq_len, seq_len), dtype=torch.float32, device=device)
+    # # flow_processed = process_attention_flow(flow, word_mappings, prompt_len, reduction="max")
+    # # print(flow_processed[0])
+    # # # Load or init checkpoint
+    # # if os.path.exists(checkpoint_file):
+    # flow_results = torch.load(checkpoint_file, map_location=device)
+    # # else:
+    # #     flow_results = torch.zeros((batch_size, seq_len, seq_len), dtype=torch.float32, device=device)
 
     # # Save utility
     # def save_checkpoint(tensor, path):
@@ -170,7 +201,7 @@ if __name__ == "__main__":
     # MAX_WORKERS = min(30, mp.cpu_count())
 
     # # Main loop: batch-wise
-    # for batch in range(43, batch_size): #13 and 25 batches may be incomplete
+    # for batch in range(73, batch_size): #13 and 25 batches may be incomplete
 
     #     batch_attention_tensor = attention_tensor[:, batch].cpu()  # [num_layers, num_heads, seq_len, seq_len]
     #     input_ids_batch = input_ids[batch]

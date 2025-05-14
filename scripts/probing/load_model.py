@@ -42,8 +42,9 @@ def load_llama(
     model = model_class.from_pretrained(
         local_path if local_path else model_id,
         cache_dir=cache_dir,
-        #torch_dtype=torch.bfloat16,
+        torch_dtype=torch.float16,
         attn_implementation="eager",
+        device_map="auto",
         low_cpu_mem_usage=True)#.to(device)
     
     model.eval()
