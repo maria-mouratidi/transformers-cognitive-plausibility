@@ -133,7 +133,7 @@ if __name__ == "__main__":
     checkpoint_file = f"/scratch/7982399/thesis/outputs/{task}/flow/attention_flow_mp.pt"
     flow = torch.load(checkpoint_file)  # Check if the file exists
     print(torch.any(flow != 0, dim=(1, 2)).nonzero(as_tuple=True)[0])
-    print(torch.all(flow[84] == 0, dim=0).nonzero(as_tuple=True)[0])
+    print(torch.all(flow[132] == 0, dim=0).nonzero(as_tuple=True)[0])
     # for i in range(50):
     #     zeros_i = torch.all(flow[i] == 0, dim=0).nonzero(as_tuple=True)[0]
     #     for j in range(50):
@@ -166,20 +166,19 @@ if __name__ == "__main__":
     #                     idx_str = ", ".join(str(x) for x in idx)
     #                     print(f"  Difference at [{idx_str}]: flow[{i}]={val_i}, flow[{j}]={val_j}")
             
-    # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    # print(f"Using device: {device}")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
 
-    # # Load data
+    # Load data
     # loaded_data = torch.load(f"/scratch/7982399/thesis/outputs/{task}/raw/attention_data.pt", map_location=device)
     # attention_tensor = loaded_data['attention'].to(device)  # [num_layers, batch_size, num_heads, seq_len, seq_len]
     # input_ids = loaded_data['input_ids'].to(device)         # [batch_size, seq_len]
     # word_mappings = loaded_data['word_mappings']           # List of token counts for each word in each sentence
     # prompt_len = loaded_data['prompt_len']                 # Length of prompt
     # _, batch_size, _, seq_len, _ = attention_tensor.shape
-    # # flow_processed = process_attention_flow(flow, word_mappings, prompt_len, reduction="max")
-    # # print(flow_processed[0])
-    # # # Load or init checkpoint
-    # # if os.path.exists(checkpoint_file):
+    # flow_processed = process_attention_flow(flow, word_mappings, prompt_len, reduction="max")
+    # print(flow_processed[0])
+    # Load or init checkpoint
     # flow_results = torch.load(checkpoint_file, map_location=device)
     # # else:
     # #     flow_results = torch.zeros((batch_size, seq_len, seq_len), dtype=torch.float32, device=device)
@@ -201,7 +200,7 @@ if __name__ == "__main__":
     # MAX_WORKERS = min(30, mp.cpu_count())
 
     # # Main loop: batch-wise
-    # for batch in range(73, batch_size): #13 and 25 batches may be incomplete
+    # for batch in range(174, batch_size): #13 and 25 batches may be incomplete
 
     #     batch_attention_tensor = attention_tensor[:, batch].cpu()  # [num_layers, num_heads, seq_len, seq_len]
     #     input_ids_batch = input_ids[batch]

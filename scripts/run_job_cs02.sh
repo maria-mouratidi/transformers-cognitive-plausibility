@@ -2,7 +2,6 @@
 #SBATCH --job-name=probing
 #SBATCH --mem=32G
 #SBATCH --time=96:00:00
-#SBATCH --cpus-per-task=30
 #SBATCH --partition=gpua100
 #SBATCH --output=/dev/null       # Disables SLURM standard output file
 #SBATCH --error=/dev/null        # Disables SLURM error output file
@@ -20,7 +19,7 @@ ERROR_LOG="$ERROR_DIR/error_$(date +"%d-%H:%M:%S").log"
 
 cd /scratch/7982399/thesis
 export PYTHONPATH=$(pwd)
-python -m "scripts.probing.saliency" > "$OUTPUT_LOG" 2> "$ERROR_LOG"
+python -m "scripts.probing.flow_decoder" > "$OUTPUT_LOG" 2> "$ERROR_LOG"
 
 # Remove log files if they are empty
 [ ! -s "$OUTPUT_LOG" ] && rm "$OUTPUT_LOG"

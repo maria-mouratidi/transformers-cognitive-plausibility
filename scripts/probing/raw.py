@@ -5,7 +5,7 @@ from materials.prompts import prompt_task2, prompt_task3
 import re
 import json
 
-def encode_input(sentences: List[List[str]], tokenizer: AutoTokenizer, task: str, relation_type: str = None):
+def encode_input(sentences: List[List[str]], tokenizer: AutoTokenizer, task: str):
     """
     Encodes pretokenized input for model processing.
     
@@ -24,6 +24,7 @@ def encode_input(sentences: List[List[str]], tokenizer: AutoTokenizer, task: str
     elif task == "task2":
         prompt_words = re.sub(r'[^\w\s]', '', prompt_task2).split()
         sentences_to_encode = [prompt_words + sentence for sentence in sentences]
+        sentences_to_encode = sentences
 
     elif task == "task3":
         sentences_to_encode = []
@@ -133,7 +134,6 @@ def process_attention(attention: torch.Tensor, word_mappings: List[List[Tuple[st
                 raise ValueError("Reduction method must be either 'mean' or 'max'")
             
             word_attentions[:, sentence_idx, :, :, word_idx] = word_attention
-    
     word_average = word_attentions.mean(dim=3)  # [num_layers, batch_size, num_heads, seq_len, max_words]
     head_average = word_average.mean(dim=2)  # [num_layers, batch_size, seq_len, max_words]
     head_average = head_average.squeeze(2)  # [num_layers, batch_size, max_words]
@@ -146,10 +146,10 @@ def process_attention(attention: torch.Tensor, word_mappings: List[List[Tuple[st
 subset = False # Set to False to process all sentences
 if __name__ == "__main__":
 
-    task = "task3" # None, task2, task3
-    # model_type = "causal"
+    task = "task2" # None, task2, task3
+    model_type = "causal"
 
-    # model, tokenizer = load_llama(model_type=model_type)
+    model, tokenizer = load_llama(model_type=model_type)
     # # #save_model(model, tokenizer, f"/scratch/7982399/hf_cache/{task}")
 
     # # # Load the sentences
@@ -161,7 +161,6 @@ if __name__ == "__main__":
     #     sentences = sentences[:subset]
 
     # encodings, word_mappings, prompt_len = encode_input(sentences, tokenizer, task)
-
     # attention = get_attention(model, encodings)
 
     # torch.save({
@@ -172,20 +171,20 @@ if __name__ == "__main__":
     # }, f"/scratch/7982399/thesis/outputs/{task}/raw/attention_data.pt")
 
     # Load the saved dictionary
-    loaded_data = torch.load(f"/scratch/7982399/thesis/outputs/{task}/raw/attention_data.pt")
+    # loaded_data = torch.load(f"/scratch/7982399/thesis/outputs/{task}/raw/attention_data.pt")
 
     # Extract each component
-    attention = loaded_data['attention']
-    input_ids = loaded_data['input_ids']
-    word_mappings = loaded_data['word_mappings']
-    prompt_len = loaded_data['prompt_len']
+    # attention = loaded_data['attention']
+    # input_ids = loaded_data['input_ids']
+    # word_mappings = loaded_data['word_mappings']
+    # prompt_len = loaded_data['prompt_len']
 
-    attention_processed = process_attention(attention, word_mappings, prompt_len, reduction="max")
-    print("Shape: ", attention_processed.shape)
+    # attention_processed = process_attention(attention, word_mappings, prompt_len, reduction="max")
+    # print("Shape: ", attention_processed.shape)
     
-    torch.save({
-        'attention_processed': attention_processed,
-        'input_ids': input_ids,
-        'word_mappings': word_mappings,
-        'prompt_len': prompt_len
-    }, f"/scratch/7982399/thesis/outputs/{task}/raw/attention_processed.pt")
+    # torch.save({
+    #     'attention_processed': attention_processed,
+    #     'input_ids': input_ids,
+    #     'word_mappings': word_mappings,
+    #     'prompt_len': prompt_len
+    # }, f"/scratch/7982399/thesis/outputs/{task}/raw/attention_processed.pt")

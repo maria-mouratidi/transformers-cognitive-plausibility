@@ -47,6 +47,8 @@ def load_llama(
         device_map="auto",
         low_cpu_mem_usage=True)#.to(device)
     
+    model.config.pad_token_id = tokenizer.pad_token_id
+    
     model.eval()
     return model, tokenizer
 
