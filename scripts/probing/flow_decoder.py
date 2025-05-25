@@ -4,7 +4,7 @@ import networkx as nx
 from networkx.algorithms import flow
 import os
 from tqdm import tqdm
-
+from typing import List, Tuple
 def calculate_flow(
     attention_tensor,               # <-- now a tensor, not a dict
     batch,
@@ -51,29 +51,70 @@ def calculate_flow(
     
     return torch.Tensor(flow_scores).unsqueeze(0)  # Add batch dimension
 
+def process_attention_flow(attention_flow: torch.Tensor, word_mappings: List[List[Tuple[str, int]]],
+                           prompt_len: int, reduction: str = "mean") -> torch.Tensor:
+    """
+    Extract word-level attention from token-level attention weights for attention flow.
+    Expects attention tensor of shape [batch_size, seq_len].
+    """
+    batch_size, seq_len, = attention_flow.shape
+    max_words = max(len(word_map) for word_map in word_mappings)
+    word_attentions = torch.zeros((batch_size, max_words), dtype=torch.float32)
+    
+    for sentence_idx, word_map in enumerate(word_mappings):
+        for word_idx, (word, num_tokens) in enumerate(word_map):
+            token_attentions = []
+            for n_token in range(num_tokens):
+                prev_tokens = word_map[:word_idx]
+                token_idx = sum(token[1] for token in prev_tokens) + n_token
+                token_attention = attention_flow[sentence_idx, token_idx] 
+                token_attentions.append(token_attention)
+
+            token_attentions = torch.stack(token_attentions)  # [seq_len, num_tokens]
+            if reduction == "mean":
+                word_attention = token_attentions.mean(dim=0)  # [seq_len]
+            elif reduction == "max":
+                word_attention = token_attentions.max(dim=0)[0]
+            else:
+                raise ValueError("Reduction method must be either 'mean' or 'max'")
+
+            word_attentions[sentence_idx, word_idx] = word_attention
+    
+    # Remove prompt words
+    return word_attentions[:, prompt_len:]  # [batch_size, max_words - prompt_len]
+
+
 
 if __name__ == "__main__":
     # Load your data
     task = "task2"
     raw_data = torch.load(f"/scratch/7982399/thesis/outputs/{task}/raw/attention_data.pt")
     attn = raw_data['attention']  # tensor of shape [layers, batches, heads, seq_len, seq_len]
-    # word_mappings = loaded_data['word_mappings']  # List of (token, position) tuples per batch
+    word_mappings = raw_data['word_mappings']  # List of (token, position) tuples per batch
 
     flow_dir = f"/scratch/7982399/thesis/outputs/{task}/flow"
     os.makedirs(flow_dir, exist_ok=True)
 
     all_flows = []
 
-    for batch in tqdm(6, range(attn.shape[1]), desc="Processing Batches"):
+    for batch in tqdm(range(6, attn.shape[1]), desc="Processing Batches"):
         # Example usage
         result = calculate_flow(
             attention_tensor=attn, 
             batch=batch,
         )
         batch_dir = os.path.join(flow_dir, f"batch_{batch}.pt")  # Save the result for each batch for safety
-        torch.save(result, batch_dir)
+        #torch.save(result, batch_dir)
         all_flows.append(result)
 
     stacked_results = torch.cat(all_flows, dim=0)  # Concatenate along the batch dimension
     stacked_dir = os.path.join(flow_dir, "attention_flow_decoder.pt")
     torch.save(stacked_results, stacked_dir)
+
+
+    # attention_flow = torch.load(stacked_dir)
+    # flow_processed = process_attention_flow(attention_flow, word_mappings, prompt_len=?, reduction="max")
+    # # Save the processed flow
+    # processed_dir = os.path.join(flow_dir, "processed_attention_flow_decoder.pt")
+    # torch.save(flow_processed, processed_dir)
+    # print(f"Processed attention flow saved to {processed_dir}")

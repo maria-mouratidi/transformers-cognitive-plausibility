@@ -1,81 +1,89 @@
 import torch
 from scripts.probing.load_model import *
-from typing import List, Tuple, Dict
+from typing import List, Tuple
 from materials.prompts import prompt_task2, prompt_task3
 import re
-import json
 
 def encode_input(sentences: List[List[str]], tokenizer: AutoTokenizer, task: str):
     """
-    Encodes pretokenized input for model processing.
-    
+    Encodes input sentences for model processing using batch tokenization.
+
     Args:
         sentences: List of pretokenized sentences (List[List[str]])
         tokenizer: The tokenizer to use
         task: The task type ('none', 'task2' or 'task3')
-        relation_type: Relation type for task3 (required if task is 'task3')
-        
+
     Returns:
-        Tuple of (batch_encodings, word_mappings, number of prompt tokens)
+        Tuple of (batch_encodings, number of prompt tokens)
     """
     if task == "none":
         prompt_words = []
+        sentences_to_encode = [[words[0]] + [" " + word for word in words[1:]] for words in sentences]
 
     elif task == "task2":
         prompt_words = re.sub(r'[^\w\s]', '', prompt_task2).split()
         sentences_to_encode = [prompt_words + sentence for sentence in sentences]
-        sentences_to_encode = sentences
+        sentences_to_encode = [[words[0]] + [" " + word for word in words[1:]] for words in sentences_to_encode]
 
     elif task == "task3":
         sentences_to_encode = []
         for item in sentences:
             sent, relation = item["sentence"], item["relation_type"]
             prompt_words = re.sub(r'[^\w\s]', '', prompt_task3.format(relation)).split()
-            sentences_to_encode.append(prompt_words + sent)
+            combined = prompt_words + sent
+            sentences_to_encode.append([combined[0]] + [" " + word for word in combined[1:]])
     
     else:
         raise ValueError(f"Invalid task: {task}. Choose from 'none', 'task2' or 'task3'.")
 
-    batch_encodings = []
-    word_mappings = []
-    
-    for sentence in sentences_to_encode:
-        # Track word to token mapping
-        word_to_tokens = []
-        all_tokens = []
-        
-        # Process each word individually
-        for word in sentence:
-            # Get tokens for this word
-            word_tokens = tokenizer.encode(word, add_special_tokens=False)
-            # Store the mapping (word, token_count)
-            word_to_tokens.append((word, len(word_tokens)))
-            # Add these tokens to our running list
-            all_tokens.extend(word_tokens)
-        
-        # Store the mapping for this sentence
-        word_mappings.append(word_to_tokens)
-        # Store the complete token sequence for this sentence
-        batch_encodings.append(all_tokens)
-    
-    # Pad sequences to the same length
-    max_length = max(len(tokens) for tokens in batch_encodings)
-    padded_encodings = [tokens + [tokenizer.pad_token_id] * (max_length - len(tokens)) 
-                        for tokens in batch_encodings]
-    
-    # Convert to tensors
-    input_ids = torch.tensor(padded_encodings)
-    attention_mask = torch.tensor([[1] * len(tokens) + [0] * (max_length - len(tokens)) 
-                                   for tokens in batch_encodings])
-    
-    # Create the encodings dictionary
-    encodings = {
-        'input_ids': input_ids,
-        'attention_mask': attention_mask
-    }
-    
-    return encodings, word_mappings, len(prompt_words)
+    # Perform batch tokenization with pretokenized input
+    batch_encodings = tokenizer(
+        sentences_to_encode,
+        padding="longest",
+        add_special_tokens=True,
+        return_tensors="pt",
+        is_split_into_words=True  # pretokenized input
+    )
 
+    # Return the encodings and the number of prompt tokens
+    return batch_encodings, len(prompt_words)
+
+def get_word_mappings(sentences: List[List[str]], batch_encodings, tokenizer: AutoTokenizer) -> List[List[Tuple[str, int]]]:
+    """
+    Calculates word mappings for each sentence, mapping each word to the number of tokens assigned to it.
+
+    Args:
+        sentences: List of original sentences as lists of strings (List[List[str]])
+        batch_encodings: The batch encodings from the tokenizer
+        tokenizer: The tokenizer used for encoding
+
+    Returns:
+        List of word mappings for each sentence. Each mapping is a list of tuples (original_word, num_tokens_assigned).
+    """
+    word_mappings = []
+    input_ids = batch_encodings["input_ids"].tolist()  # Convert tensor to list for processing
+
+    for sentence_idx, sentence in enumerate(sentences):
+        token_sequence = input_ids[sentence_idx]  # Token sequence for the current sentence
+        token_idx = 0
+        sentence_mapping = []
+
+        for word in sentence:
+            num_tokens = 0
+            tokens = []
+
+            while token_idx < len(token_sequence):
+                token = tokenizer.convert_ids_to_tokens(token_sequence[token_idx])
+                if num_tokens > 0 and (token.startswith("Ġ") or token.startswith("Ċ")):
+                    # A new word starts, break the loop
+                    break
+                tokens += [token]
+                num_tokens += 1
+                token_idx += 1
+            sentence_mapping.append((word, num_tokens, tokens))
+        word_mappings.append(sentence_mapping)
+    return word_mappings
+            
 
 def get_attention(model, encodings):
 
@@ -160,7 +168,8 @@ if __name__ == "__main__":
     # if subset:
     #     sentences = sentences[:subset]
 
-    # encodings, word_mappings, prompt_len = encode_input(sentences, tokenizer, task)
+    # encodings, prompt_len = encode_input(sentences, tokenizer, task)
+    # word_mappings = get_word_mappings(sentences, encodings, tokenizer)
     # attention = get_attention(model, encodings)
 
     # torch.save({

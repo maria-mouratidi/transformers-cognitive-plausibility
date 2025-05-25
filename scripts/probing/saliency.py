@@ -2,68 +2,107 @@ import torch
 import numpy as np
 from scripts.probing.load_model import load_llama
 
-def compute_sensitivity(model, tokenizer, sentence):
-    """
-    Compute saliency (gradient-based sensitivity) of each token in a LLaMA model.
-    Optimized for GPU usage and FP16 inference.
-    """
-    token_ids = tokenizer.encode(sentence, add_special_tokens=False)
-    tokens = tokenizer.convert_ids_to_tokens(token_ids)
+def register_embedding_list_hook(model, embeddings_list):
+    def forward_hook(module, inputs, output):
+        embeddings_list.append(output.squeeze(0).clone().cpu().detach().numpy())
+    embedding_layer = model.get_input_embeddings()
+
+    handle = embedding_layer.register_forward_hook(forward_hook)
+    return handle
+
+def register_embedding_gradient_hooks(model, embeddings_gradients):
+    def hook_layers(module, grad_in, grad_out):
+        embeddings_gradients.append(grad_out[0].detach().cpu().numpy())
+
+    embedding_layer = model.get_input_embeddings()
+    hook = embedding_layer.register_full_backward_hook(hook_layers)
+    return hook
+
+def lm_saliency(model, tokenizer, input_ids, input_mask, label_id):
+
+    torch.enable_grad()
     model.eval()
-    device = next(model.parameters()).device
-    sensitivity = []
+    device = model.device
 
-    # Create input tensor and move to GPU
-    token_id_tensor = torch.tensor(token_ids).unsqueeze(0).to(device)  # (1, seq_len)
-    seq_len = token_id_tensor.shape[1]
+    embeddings_list = []
+    gradients_list = []
+
+    input_ids = torch.tensor(input_ids, dtype=torch.long).to(device)
+    input_mask = torch.tensor(input_mask, dtype=torch.long).to(device)
+
+    handle = register_embedding_list_hook(model, embeddings_list)
+    hook = register_embedding_gradient_hooks(model, gradients_list)
+
+    model.zero_grad()
+    A = model(input_ids.unsqueeze(0), attention_mask=input_mask.unsqueeze(0))
     
-    # Get embeddings and enable gradient tracking only on them
-    with torch.no_grad():
-        inputs_embeds = model.model.embed_tokens(token_id_tensor).detach()
-    inputs_embeds.requires_grad_(True)
+    A.logits[0][-1][label_id].backward()
 
-    # Forward pass
-    outputs = model(inputs_embeds=inputs_embeds)
-    logits = outputs.logits  # (1, seq_len, vocab_size)
+    handle.remove()
+    hook.remove()
 
-    # Extract the logit corresponding to the current token (target self-prediction)
-    for t_prime in range(seq_len):
-        model.zero_grad()
-        inputs_embeds.grad = None  # Reset gradients
-        target_token_id = token_ids[t_prime]
-        target_logit = logits[0, t_prime, target_token_id]
+    gradients_list = np.array(gradients_list).squeeze()
+    embeddings_list = np.array(embeddings_list).squeeze()
+    # Merge tokens into the original words
+    tokens = tokenizer.convert_ids_to_tokens(input_ids)
 
+    return tokens, gradients_list, embeddings_list
 
-        # Backward pass to compute gradients
-        target_logit.backward(retain_graph=True)
+def merge_gpt_tokens(tokens, gradients):
+    merged_gradients = []
+    merged_words = []  # To store the merged words
+    word = ""
+    word_gradients = 0
+    # Merge tokens into the original words
+    for i, token in enumerate(tokens):
+        if token.startswith("Ġ") or token.startswith("Ċ"):
+            if word != "":
+                merged_gradients.append(word_gradients)
+                merged_words.append(word)  # Append the completed word
+                word = ""
+                word_gradients = 0
+            word = token[1:]
+            word_gradients = gradients[i]
+        else:
+            word += token
+            word_gradients += gradients[i]
+    if word != "":
+        merged_gradients.append(word_gradients)
+        merged_words.append(word)  # Append the last word
+    return np.array(merged_gradients).squeeze(), merged_words
 
-        # Gradient of output at t' w.r.t. input at t
-        grads = inputs_embeds.grad[0]  # (seq_len, hidden_dim)
-
-        # Compute L2 norm of gradients across embedding dimension
-        print("\n\n")
-        grads_l2 = grads.pow(2).sum(dim=1) # (seq_len,)
-        print("L2: ", grads_l2)
-        grads_l2_sum = grads_l2.sum()  # Sum across all tokens
-        print("L2 sum: ", grads_l2_sum)
-        grads_norm = grads_l2_sum / grads_l2.max()  # Normalize for stability
-        print("L2 norm: ", grads_norm)
-
-        sensitivity.append(grads_norm.detach().cpu().tolist())
-    print(sensitivity)
-
-    return tokens, sensitivity # (seq_len, seq_len)
+def l1_grad_norm(tokens, grads, normalize=False):
+    l1_grad = np.linalg.norm(grads, ord=1, axis=-1).squeeze()
+    l1_grad, merged_tokens = merge_gpt_tokens(tokens, l1_grad)
+    
+    if normalize:
+        norm = np.linalg.norm(l1_grad, ord=1)
+        l1_grad /= norm
+    
+    return l1_grad, merged_tokens
 
 if __name__ == "__main__":
-    # Load model and tokenizer
     model, tokenizer = load_llama("causal")
-    # Example sentence
+    device = model.device
+
     sentence = "The quick fox."
-    tokens, sensitivity = compute_sensitivity(model, tokenizer, sentence)
-    for tok, score in zip(tokens, sensitivity):
-        print(f"{tok:>12s}: {score}")
+    inputs = tokenizer(sentence, return_tensors="pt", padding=True)
 
+    input_ids = inputs["input_ids"][0].to(device).tolist()
+    input_mask = inputs["attention_mask"][0].to(device).tolist()
 
-    # tokens, saliency = extract_relative_saliency(model, tokenizer, sentence)
-    # for tok, score in zip(tokens, saliency):
-    #     print(f"{tok:>12s}: {score:.4f}")
+    label_id = model(input_ids=torch.tensor([input_ids]).to(device)).logits[0, -1].argmax().item()
+
+    # Assuming you want to inspect the most probable next word
+    tokens, grads, embeds = lm_saliency(
+        model,
+        tokenizer,
+        input_ids,
+        input_mask,
+        label_id=model(input_ids=torch.tensor([input_ids]).to(device)).logits[0, -1].argmax().item()
+    )
+
+    l1_grad, merged_tokens = l1_grad_norm(tokens, grads, normalize=True)
+    print("Tokens:", tokens)
+    print("L1 Gradient Norm:", l1_grad)
+    print("Merged Tokens:", merged_tokens)
