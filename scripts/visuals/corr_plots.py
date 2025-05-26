@@ -6,6 +6,7 @@ import numpy as np
 def plot_regplots(human_df, model_values, features, layer_idx, save_dir=None):
     for feature_name in features:
         plt.figure(figsize=(6, 5))
+        
         sns.regplot(x=model_values, y=human_df[feature_name], scatter_kws={"s": 10}, line_kws={"color": "red"})
         plt.title(f'Regplot: Model Layer {layer_idx} Attention vs {feature_name}')
         plt.xlabel(f'Model Attention (Layer {layer_idx})')

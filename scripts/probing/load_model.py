@@ -25,6 +25,7 @@ def load_llama(
     """
     # Setup device
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = "cpu"
 
     if model_type == "causal":
         model_class = AutoModelForCausalLM
@@ -44,7 +45,7 @@ def load_llama(
         cache_dir=cache_dir,
         torch_dtype=torch.float16,
         attn_implementation="eager",
-        device_map="auto",
+        #device_map="auto",
         low_cpu_mem_usage=True)#.to(device)
     
     model.config.pad_token_id = tokenizer.pad_token_id

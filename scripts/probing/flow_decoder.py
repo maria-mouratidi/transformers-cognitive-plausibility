@@ -97,20 +97,19 @@ if __name__ == "__main__":
 
     all_flows = []
 
-    for batch in tqdm(range(6, attn.shape[1]), desc="Processing Batches"):
+    for batch in tqdm(range(attn.shape[1]), desc="Processing Batches"):
         # Example usage
         result = calculate_flow(
             attention_tensor=attn, 
             batch=batch,
         )
         batch_dir = os.path.join(flow_dir, f"batch_{batch}.pt")  # Save the result for each batch for safety
-        #torch.save(result, batch_dir)
+        torch.save(result, batch_dir)
         all_flows.append(result)
 
     stacked_results = torch.cat(all_flows, dim=0)  # Concatenate along the batch dimension
-    stacked_dir = os.path.join(flow_dir, "attention_flow_decoder.pt")
+    stacked_dir = os.path.join(flow_dir, "attention_flow.pt")
     torch.save(stacked_results, stacked_dir)
-
 
     # attention_flow = torch.load(stacked_dir)
     # flow_processed = process_attention_flow(attention_flow, word_mappings, prompt_len=?, reduction="max")

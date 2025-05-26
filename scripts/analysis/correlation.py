@@ -59,6 +59,7 @@ def exploratory_analysis_for_layers(human_df, attention, layers_to_analyze, save
 
 def run_full_analysis(attn_method: str, task: str,):
     human_df, attention = load_processed_data(attn_method=attn_method, task=task)
+
     print(f"Attention shape: {attention.shape}")
 
     num_layers, num_sentences, max_seq_len = attention.shape
@@ -66,16 +67,19 @@ def run_full_analysis(attn_method: str, task: str,):
     
     # Convert token indices to tensors for efficient indexing
     sent_ids, word_ids = zip(*token_indices)
+    print(sent_ids[-1], word_ids[-1])
     sent_ids = torch.tensor(sent_ids, dtype=torch.long)
     word_ids = torch.tensor(word_ids, dtype=torch.long)
 
     # Efficient batch indexing in PyTorch
-    attention_nonpadded = attention[:, sent_ids, word_ids]#.numpy()
+    
+    attention_nonpadded = attention[:, sent_ids, word_ids].numpy()
     # --- Exploratory Analysis ---
     layers_to_analyze = [0, 15, 31]
     save_dir = f"outputs/{task}/{attn_method}/analysis_plots"
     os.makedirs(save_dir, exist_ok=True)
     #save_dir = None
+    print(f"Attention non-padded shape: {attention_nonpadded.shape}")
     exploratory_analysis_for_layers(human_df, attention_nonpadded, layers_to_analyze, save_dir)
     
     # --- Correlation Analysis across ALL layers ---
@@ -95,4 +99,4 @@ def run_full_analysis(attn_method: str, task: str,):
     sig.to_csv(f"{save_dir}/significant_correlations.csv", index=False)
 
 if __name__ == "__main__": 
-    run_full_analysis(attn_method = "raw", task="task3")
+    run_full_analysis(attn_method = "raw", task="task2")

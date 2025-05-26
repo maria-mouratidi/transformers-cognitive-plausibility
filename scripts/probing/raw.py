@@ -3,6 +3,7 @@ from scripts.probing.load_model import *
 from typing import List, Tuple
 from materials.prompts import prompt_task2, prompt_task3
 import re
+import json
 
 def encode_input(sentences: List[List[str]], tokenizer: AutoTokenizer, task: str):
     """
@@ -46,7 +47,7 @@ def encode_input(sentences: List[List[str]], tokenizer: AutoTokenizer, task: str
     )
 
     # Return the encodings and the number of prompt tokens
-    return batch_encodings, len(prompt_words)
+    return batch_encodings, sentences_to_encode, len(prompt_words)
 
 def get_word_mappings(sentences: List[List[str]], batch_encodings, tokenizer: AutoTokenizer) -> List[List[Tuple[str, int]]]:
     """
@@ -77,11 +78,12 @@ def get_word_mappings(sentences: List[List[str]], batch_encodings, tokenizer: Au
                 if num_tokens > 0 and (token.startswith("Ġ") or token.startswith("Ċ")):
                     # A new word starts, break the loop
                     break
-                tokens += [token]
+                tokens.append(token)
                 num_tokens += 1
                 token_idx += 1
             sentence_mapping.append((word, num_tokens, tokens))
         word_mappings.append(sentence_mapping)
+    
     return word_mappings
             
 
@@ -122,7 +124,7 @@ def process_attention(attention: torch.Tensor, word_mappings: List[List[Tuple[st
     word_attentions = torch.zeros((num_layers, batch_size, num_heads, seq_len, max_words), device=device)
     
     for sentence_idx, word_map in enumerate(word_mappings):
-        for word_idx, (word, num_tokens) in enumerate(word_map):
+        for word_idx, (word, num_tokens, tokens) in enumerate(word_map):
             word_attention = torch.zeros((num_layers, num_heads, seq_len), device=device)
             token_attentions = []
             
@@ -157,10 +159,10 @@ if __name__ == "__main__":
     task = "task2" # None, task2, task3
     model_type = "causal"
 
-    model, tokenizer = load_llama(model_type=model_type)
-    # # #save_model(model, tokenizer, f"/scratch/7982399/hf_cache/{task}")
+    # model, tokenizer = load_llama(model_type=model_type)
+    # #save_model(model, tokenizer, f"/scratch/7982399/hf_cache/{task}")
 
-    # # # Load the sentences
+    # # Load the sentences
     # with open(f'materials/sentences_{task}.json', 'r') as f:
     #     sentences = json.load(f)
     
@@ -168,8 +170,8 @@ if __name__ == "__main__":
     # if subset:
     #     sentences = sentences[:subset]
 
-    # encodings, prompt_len = encode_input(sentences, tokenizer, task)
-    # word_mappings = get_word_mappings(sentences, encodings, tokenizer)
+    # encodings, sentences_full, prompt_len = encode_input(sentences, tokenizer, task)
+    # word_mappings = get_word_mappings(sentences_full, encodings, tokenizer)
     # attention = get_attention(model, encodings)
 
     # torch.save({
@@ -180,20 +182,20 @@ if __name__ == "__main__":
     # }, f"/scratch/7982399/thesis/outputs/{task}/raw/attention_data.pt")
 
     # Load the saved dictionary
-    # loaded_data = torch.load(f"/scratch/7982399/thesis/outputs/{task}/raw/attention_data.pt")
+    loaded_data = torch.load(f"/scratch/7982399/thesis/outputs/{task}/raw/attention_data.pt")
 
     # Extract each component
-    # attention = loaded_data['attention']
-    # input_ids = loaded_data['input_ids']
-    # word_mappings = loaded_data['word_mappings']
-    # prompt_len = loaded_data['prompt_len']
+    attention = loaded_data['attention']
+    input_ids = loaded_data['input_ids']
+    word_mappings = loaded_data['word_mappings']
+    prompt_len = loaded_data['prompt_len']
 
-    # attention_processed = process_attention(attention, word_mappings, prompt_len, reduction="max")
-    # print("Shape: ", attention_processed.shape)
+    attention_processed = process_attention(attention, word_mappings, prompt_len, reduction="max")
+    print("Shape: ", attention_processed.shape)
     
-    # torch.save({
-    #     'attention_processed': attention_processed,
-    #     'input_ids': input_ids,
-    #     'word_mappings': word_mappings,
-    #     'prompt_len': prompt_len
-    # }, f"/scratch/7982399/thesis/outputs/{task}/raw/attention_processed.pt")
+    torch.save({
+        'attention_processed': attention_processed,
+        'input_ids': input_ids,
+        'word_mappings': word_mappings,
+        'prompt_len': prompt_len
+    }, f"/scratch/7982399/thesis/outputs/{task}/raw/attention_processed.pt")

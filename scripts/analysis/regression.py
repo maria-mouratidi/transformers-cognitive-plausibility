@@ -30,7 +30,7 @@ sent_idx, word_idx = zip(*map_token_indices(gaze_df))
 sent_idx = np.array(sent_idx)
 word_idx = np.array(word_idx)
 
-selected_layers = [0]
+selected_layers = [31]
 attention_features = []
 for layer in selected_layers:
     layer_attention = attention_tensor[layer, sent_idx, word_idx]
