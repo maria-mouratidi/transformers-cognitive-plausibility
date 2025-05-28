@@ -156,30 +156,30 @@ def process_attention(attention: torch.Tensor, word_mappings: List[List[Tuple[st
 subset = False # Set to False to process all sentences
 if __name__ == "__main__":
 
-    task = "task2" # None, task2, task3
+    task = "task3" # None, task2, task3
     model_type = "causal"
 
-    # model, tokenizer = load_llama(model_type=model_type)
-    # #save_model(model, tokenizer, f"/scratch/7982399/hf_cache/{task}")
+    model, tokenizer = load_llama(model_type=model_type)
+    #save_model(model, tokenizer, f"/scratch/7982399/hf_cache/{task}")
 
-    # # Load the sentences
-    # with open(f'materials/sentences_{task}.json', 'r') as f:
-    #     sentences = json.load(f)
+    # Load the sentences
+    with open(f'materials/sentences_{task}.json', 'r') as f:
+        sentences = json.load(f)
     
-    # # Subset for testing
-    # if subset:
-    #     sentences = sentences[:subset]
+    # Subset for testing
+    if subset:
+        sentences = sentences[:subset]
 
-    # encodings, sentences_full, prompt_len = encode_input(sentences, tokenizer, task)
-    # word_mappings = get_word_mappings(sentences_full, encodings, tokenizer)
-    # attention = get_attention(model, encodings)
+    encodings, sentences_full, prompt_len = encode_input(sentences, tokenizer, task)
+    word_mappings = get_word_mappings(sentences_full, encodings, tokenizer)
+    attention = get_attention(model, encodings)
 
-    # torch.save({
-    #     'attention': attention,
-    #     'input_ids': encodings['input_ids'],
-    #     'word_mappings': word_mappings,
-    #     'prompt_len': prompt_len
-    # }, f"/scratch/7982399/thesis/outputs/{task}/raw/attention_data.pt")
+    torch.save({
+        'attention': attention,
+        'input_ids': encodings['input_ids'],
+        'word_mappings': word_mappings,
+        'prompt_len': prompt_len
+    }, f"/scratch/7982399/thesis/outputs/{task}/raw/attention_data.pt")
 
     # Load the saved dictionary
     loaded_data = torch.load(f"/scratch/7982399/thesis/outputs/{task}/raw/attention_data.pt")

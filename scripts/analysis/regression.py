@@ -14,7 +14,7 @@ from scripts.analysis.perm_feat_imp import compute_permutation_importance
 
 # ------------------ Load and Prepare Data ------------------
 
-attn_method, task = "raw", "task2"
+attn_method, task = "raw", "task3"
 text_df = pd.read_csv(f'materials/text_features_{task}.csv')
 text_df['role'] = text_df['role'].map({'function': 0, 'content': 1})
 gaze_df, attention_tensor = load_processed_data(attn_method=attn_method, task=task)

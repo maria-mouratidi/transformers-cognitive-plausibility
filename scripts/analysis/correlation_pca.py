@@ -3,11 +3,9 @@ import pandas as pd
 import torch
 from sklearn.decomposition import PCA
 from scipy.stats import pearsonr, spearmanr
-import matplotlib.pyplot as plt
-import seaborn as sns
+from scripts.analysis.correlation import load_processed_data
 from scripts.visuals.corr_plots import plot_feature_corr
 from scripts.visuals.pca_plots import plot_explained_variance, plot_pca_loadings
-import os
 
 # TODO: remove noninformtive features? (e.g., go past time)
 
@@ -46,13 +44,7 @@ def correlation_analysis(attention_nonpadded, pca_df):
     return pd.DataFrame(results)
 
 def run_analysis_with_pca(task: str, attn_method:str, variance_threshold=0.95, save_dir=None):
-    human_df = pd.read_csv('data/task2/processed/processed_participants.csv')
-    model_data = torch.load(f"/scratch/7982399/thesis/outputs/{task}/{attn_method}/attention_processed.pt")
-    if attn_method == "raw":
-        attention = model_data['attention_processed'].cpu()
-    elif attn_method == "flow":
-        print(model_data)
-        attention = torch.unsqueeze(model_data, 0) if model_data.ndim == 2 else model_data.cpu()
+    human_df, attention = load_processed_data(attn_method=attn_method, task=task)
     
     token_indices = list(zip(human_df['Sent_ID'], human_df['Word_ID']))
     sent_ids, word_ids = zip(*token_indices)
@@ -60,8 +52,7 @@ def run_analysis_with_pca(task: str, attn_method:str, variance_threshold=0.95, s
     word_ids = torch.tensor(word_ids, dtype=torch.long)
     
     attention_nonpadded = attention[:, sent_ids, word_ids]
-    print(attention_nonpadded.shape)
-    print(attention_nonpadded[:, 0])
+    print("Attention shape: ", attention_nonpadded.shape)
     
     # Apply PCA with dynamic component selection
     pca_df, pca, explained_variance, cumulative_variance = apply_pca(human_df, ['nFixations', 'meanPupilSize', 'GD', 'TRT', 'FFD', 'SFD', 'GPT'])
@@ -79,6 +70,6 @@ def run_analysis_with_pca(task: str, attn_method:str, variance_threshold=0.95, s
 
 if __name__ == "__main__":
     task = "task2"
-    attn_method = "raw"
+    attn_method = "flow"
     save_dir = f"outputs/{task}/{attn_method}/pca"
     run_analysis_with_pca(task=task, attn_method=attn_method, variance_threshold=0.95, save_dir=save_dir)

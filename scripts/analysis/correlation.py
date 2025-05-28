@@ -12,12 +12,14 @@ FEATURES = ['nFixations', 'meanPupilSize', 'GD', 'TRT', 'FFD', 'SFD', 'GPT']
 
 def load_processed_data(attn_method: str, task: str):
     human_df = pd.read_csv(f'data/{task}/processed/processed_participants.csv')
+    print(f"\nTotal NaN values: {human_df.isna().sum().sum()}")
     human_df.fillna(0, inplace=True) #TODO: temporary fix for NaN values
-    if subset:
-        human_df = human_df[human_df['Sent_ID'] < subset]  # Subset
-    model_data = torch.load(f"/scratch/7982399/thesis/outputs/{task}/{attn_method}/attention_processed.pt")
-    attention = model_data['attention_processed'].cpu()
-
+    if attn_method == "raw":
+        model_data = torch.load(f"/scratch/7982399/thesis/outputs/{task}/{attn_method}/attention_data.pt")
+        attention = model_data['attention_processed'].cpu()
+    elif attn_method == "flow":
+        attention = torch.load(f"/scratch/7982399/thesis/outputs/{task}/{attn_method}/attention_flow_processed.pt")
+        attention = torch.unsqueeze(attention, 0) 
     return human_df, attention
 
 def map_token_indices(human_df):
@@ -62,7 +64,6 @@ def run_full_analysis(attn_method: str, task: str,):
 
     print(f"Attention shape: {attention.shape}")
 
-    num_layers, num_sentences, max_seq_len = attention.shape
     token_indices = map_token_indices(human_df)
     
     # Convert token indices to tensors for efficient indexing
@@ -72,10 +73,9 @@ def run_full_analysis(attn_method: str, task: str,):
     word_ids = torch.tensor(word_ids, dtype=torch.long)
 
     # Efficient batch indexing in PyTorch
-    
     attention_nonpadded = attention[:, sent_ids, word_ids].numpy()
     # --- Exploratory Analysis ---
-    layers_to_analyze = [0, 15, 31]
+    layers_to_analyze = [0, 15, 31] if attn_method == "raw" else [0]
     save_dir = f"outputs/{task}/{attn_method}/analysis_plots"
     os.makedirs(save_dir, exist_ok=True)
     #save_dir = None
@@ -99,4 +99,4 @@ def run_full_analysis(attn_method: str, task: str,):
     sig.to_csv(f"{save_dir}/significant_correlations.csv", index=False)
 
 if __name__ == "__main__": 
-    run_full_analysis(attn_method = "raw", task="task2")
+    run_full_analysis(attn_method = "flow", task="task3")

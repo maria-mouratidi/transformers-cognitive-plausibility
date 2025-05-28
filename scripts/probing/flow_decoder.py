@@ -62,7 +62,7 @@ def process_attention_flow(attention_flow: torch.Tensor, word_mappings: List[Lis
     word_attentions = torch.zeros((batch_size, max_words), dtype=torch.float32)
     
     for sentence_idx, word_map in enumerate(word_mappings):
-        for word_idx, (word, num_tokens) in enumerate(word_map):
+        for word_idx, (word, num_tokens, tokens) in enumerate(word_map):
             token_attentions = []
             for n_token in range(num_tokens):
                 prev_tokens = word_map[:word_idx]
@@ -79,7 +79,8 @@ def process_attention_flow(attention_flow: torch.Tensor, word_mappings: List[Lis
                 raise ValueError("Reduction method must be either 'mean' or 'max'")
 
             word_attentions[sentence_idx, word_idx] = word_attention
-    
+
+    word_attentions /= word_attentions.sum(dim=1, keepdim=True)  # Normalize attention per sentence
     # Remove prompt words
     return word_attentions[:, prompt_len:]  # [batch_size, max_words - prompt_len]
 
@@ -87,11 +88,12 @@ def process_attention_flow(attention_flow: torch.Tensor, word_mappings: List[Lis
 
 if __name__ == "__main__":
     # Load your data
-    task = "task2"
+    task = "task3"
     raw_data = torch.load(f"/scratch/7982399/thesis/outputs/{task}/raw/attention_data.pt")
     attn = raw_data['attention']  # tensor of shape [layers, batches, heads, seq_len, seq_len]
     word_mappings = raw_data['word_mappings']  # List of (token, position) tuples per batch
-
+    prompt_len = raw_data['prompt_len']  # Length of the prompt in tokens
+    
     flow_dir = f"/scratch/7982399/thesis/outputs/{task}/flow"
     os.makedirs(flow_dir, exist_ok=True)
 
@@ -104,16 +106,16 @@ if __name__ == "__main__":
             batch=batch,
         )
         batch_dir = os.path.join(flow_dir, f"batch_{batch}.pt")  # Save the result for each batch for safety
-        torch.save(result, batch_dir)
+        #torch.save(result, batch_dir)
         all_flows.append(result)
 
     stacked_results = torch.cat(all_flows, dim=0)  # Concatenate along the batch dimension
     stacked_dir = os.path.join(flow_dir, "attention_flow.pt")
     torch.save(stacked_results, stacked_dir)
 
-    # attention_flow = torch.load(stacked_dir)
-    # flow_processed = process_attention_flow(attention_flow, word_mappings, prompt_len=?, reduction="max")
-    # # Save the processed flow
-    # processed_dir = os.path.join(flow_dir, "processed_attention_flow_decoder.pt")
-    # torch.save(flow_processed, processed_dir)
-    # print(f"Processed attention flow saved to {processed_dir}")
+    attention_flow = torch.load(stacked_dir)
+    flow_processed = process_attention_flow(attention_flow, word_mappings, prompt_len=prompt_len, reduction="max")
+    # Save the processed flow
+    processed_dir = os.path.join(flow_dir, "attention_flow_processed.pt")
+    torch.save(flow_processed, processed_dir)
+    print(f"Processed attention flow saved to {processed_dir}")

@@ -26,7 +26,6 @@ def plot_regplots(human_df, model_values, features, layer_idx, save_dir=None):
 
 # In your `corr_plots.py`
 def plot_feature_corr(results_df, method='pearson', pca=False, save_dir=None, significance_threshold=0.05):
-    print(results_df.columns)
 
     col = 'principal_component' if pca else 'feature'
     pivot = results_df.pivot(index='layer', columns=col, values=f'{method}_r')
