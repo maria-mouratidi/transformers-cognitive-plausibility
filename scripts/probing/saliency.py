@@ -18,7 +18,7 @@ def register_embedding_gradient_hooks(model, embedding_gradients):
     hook = embedding_layer.register_full_backward_hook(hook_layers)
     return hook
 
-def lm_saliency(model, input_ids, input_mask):
+def lm_saliency(model, input_ids, input_mask, pos=-1):
     
     torch.enable_grad() # Enable gradient computation
     device = model.device
@@ -34,7 +34,10 @@ def lm_saliency(model, input_ids, input_mask):
 
     model.zero_grad()  # Clear previous gradients
     outputs = model(input_ids.unsqueeze(0), attention_mask=input_mask.unsqueeze(0)) # Forward pass
-    outputs.logits[0][-1].backward() # Compute gradients w.r.t. the last token
+    logits = outputs.logits
+
+    token_logit = logits[0, pos, input_ids[pos]]
+    token_logit.backward()  # Backward pass to compute gradients
 
     handle.remove()  # Remove the forward hook
     hook.remove()  # Remove the backward hook
@@ -81,17 +84,19 @@ if __name__ == "__main__":
         inputs, sentences_full, prompt_len = encode_input([sentence], tokenizer, task=task)
     
         word_mappings = get_word_mappings(sentences_full, inputs, tokenizer)
-        input_ids = inputs["input_ids"]
-        input_mask = inputs["attention_mask"]
+        input_ids = inputs["input_ids"][0]
+        input_mask = inputs["attention_mask"][0]
+        print(f"Input IDs: {input_ids}")
+        print(f"Input Mask: {input_mask}")
 
         # Assuming you want to inspect the most probable next word
         grads, embeds = lm_saliency(
             model,
-            input_ids[sentence_idx],
-            input_mask[sentence_idx],
+            input_ids,
+            input_mask,
         )
 
 
-        l1_grad = l1_grad_norm(grads, word_mappings[sentence_idx], normalize=True)
+        l1_grad = l1_grad_norm(grads, word_mappings[0], normalize=True)
         print(f"Sentence: {' '.join(sentence)}")
         print("L1 Gradient Norm:", l1_grad)
