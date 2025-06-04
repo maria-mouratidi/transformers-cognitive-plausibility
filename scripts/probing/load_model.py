@@ -6,11 +6,13 @@ from typing import List, Tuple, Dict, Union, Literal
 
 transformers.logging.set_verbosity_error()
 
+hf_token = "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"
+
 def load_llama(
     model_type: str,
     model_id: str = "meta-llama/Llama-3.1-8B",
-    cache_dir: str = '/scratch/7982399/hf_cache',
-    local_path: str = '/scratch/7982399/hf_cache') -> Tuple[Union[AutoModel, AutoModelForCausalLM, AutoModelForQuestionAnswering], AutoTokenizer]:
+    cache_dir: str = '/scratch/7982399/hf_cache/llama',
+    local_path: str = '/scratch/7982399/hf_cache/llama') -> Tuple[Union[AutoModel, AutoModelForCausalLM, AutoModelForQuestionAnswering], AutoTokenizer]:
     """
     Load a model and tokenizer with specified architecture type.
     
@@ -33,11 +35,11 @@ def load_llama(
         model_class = AutoModelForQuestionAnswering
     else:
         model_class = AutoModel
-    
+
     # Initialize tokenizer
     tokenizer = AutoTokenizer.from_pretrained(
         local_path if local_path else model_id,
-        cache_dir=cache_dir)
+        cache_dir=cache_dir, use_auth_token=hf_token)
     
     # Load model
     model = model_class.from_pretrained(
@@ -55,8 +57,8 @@ def load_llama(
 
 def load_bert(
     model_id: str = "bert-base-uncased",
-    cache_dir: str = '/scratch/7982399/hf_cache',
-    local_path: str = '/scratch/7982399/hf_cache') -> Tuple[AutoModel, AutoTokenizer]:
+    cache_dir: str = '/scratch/7982399/hf_cache/bert',
+    local_path: str = '/scratch/7982399/hf_cache/bert') -> Tuple[AutoModel, AutoTokenizer]:
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = AutoModel.from_pretrained(
