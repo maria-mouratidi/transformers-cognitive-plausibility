@@ -53,6 +53,23 @@ def load_llama(
     model.eval()
     return model, tokenizer
 
+def load_bert(
+    model_id: str = "bert-base-uncased",
+    cache_dir: str = '/scratch/7982399/hf_cache',
+    local_path: str = '/scratch/7982399/hf_cache') -> Tuple[AutoModel, AutoTokenizer]:
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model = AutoModel.from_pretrained(
+        local_path if local_path else model_id,
+        cache_dir=cache_dir,
+        torch_dtype=torch.float32,  # BERT is typically FP32
+        device_map="auto"
+    )
+    tokenizer = AutoTokenizer.from_pretrained(local_path if local_path else model_id, cache_dir=cache_dir)
+    model.eval()
+    return model, tokenizer
+
+
 def save_model(model: AutoModel, tokenizer: AutoTokenizer, save_path: str) -> None:
     os.makedirs(save_path, exist_ok=True)
     model.save_pretrained(save_path, safe_serialization=True)

@@ -5,6 +5,7 @@ from networkx.algorithms import flow
 import os
 from tqdm import tqdm
 from typing import List, Tuple
+
 def calculate_flow(
     attention_tensor,               # <-- now a tensor, not a dict
     batch,

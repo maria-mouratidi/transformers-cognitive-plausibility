@@ -14,7 +14,7 @@ from scripts.analysis.perm_feat_imp import compute_permutation_importance
 
 # ------------------ Load and Prepare Data ------------------
 
-attn_method, task = "raw", "task3"
+attn_method, task = "saliency", "task2"
 text_df = pd.read_csv(f'materials/text_features_{task}.csv')
 text_df['role'] = text_df['role'].map({'function': 0, 'content': 1})
 gaze_df, attention_tensor = load_processed_data(attn_method=attn_method, task=task)
@@ -30,7 +30,7 @@ sent_idx, word_idx = zip(*map_token_indices(gaze_df))
 sent_idx = np.array(sent_idx)
 word_idx = np.array(word_idx)
 
-selected_layers = [31]
+selected_layers = [31] if attn_method == "raw" else [0]
 attention_features = []
 for layer in selected_layers:
     layer_attention = attention_tensor[layer, sent_idx, word_idx]

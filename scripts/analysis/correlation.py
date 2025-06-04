@@ -3,6 +3,7 @@ import os
 import pandas as pd
 from scipy.stats import pearsonr, spearmanr
 import torch
+import pickle
 from scripts.probing.raw import subset
 from scripts.visuals.eda import *
 from scripts.visuals.normality_test import *
@@ -20,6 +21,14 @@ def load_processed_data(attn_method: str, task: str):
     elif attn_method == "flow":
         attention = torch.load(f"/scratch/7982399/thesis/outputs/{task}/{attn_method}/attention_flow_processed.pt")
         attention = torch.unsqueeze(attention, 0) 
+    elif attn_method == "saliency":
+        with open(f"/scratch/7982399/thesis/outputs/{task}/{attn_method}/saliency_data.pkl", 'rb') as f:
+            attention = pickle.load(f)
+            max_len = max(att.shape[0] for att in attention)
+            attention = np.array([np.pad(arr, (0, max_len - arr.shape[0]), mode='constant') for arr in attention]) # pad to max sentence length and stack
+            attention = np.nan_to_num(attention, nan=0.0)  # Replace NaN with 0.0
+            attention = torch.tensor(attention)
+            attention = torch.unsqueeze(attention, 0)  # Add a dummy layer dimension
     return human_df, attention
 
 def map_token_indices(human_df):
@@ -68,14 +77,20 @@ def run_full_analysis(attn_method: str, task: str,):
     
     # Convert token indices to tensors for efficient indexing
     sent_ids, word_ids = zip(*token_indices)
-    print(sent_ids[-1], word_ids[-1])
     sent_ids = torch.tensor(sent_ids, dtype=torch.long)
     word_ids = torch.tensor(word_ids, dtype=torch.long)
 
     # Efficient batch indexing in PyTorch
     attention_nonpadded = attention[:, sent_ids, word_ids].numpy()
+    print(f"Attention non-padded shape: {attention_nonpadded.shape}")
+    nan_indices_nonpadded = np.argwhere(np.isnan(attention_nonpadded))
+    if nan_indices_nonpadded.size > 0:
+        print(f"NaN values detected in attention_nonpadded at indices: {nan_indices_nonpadded}")
+        for idx in nan_indices_nonpadded:
+            print(f"Specific value at index {idx}: {attention_nonpadded[tuple(idx)]}")
+    
     # --- Exploratory Analysis ---
-    layers_to_analyze = [0, 15, 31] if attn_method == "raw" else [0]
+    layers_to_analyze = [0, 15, 31] if attn_method == "raw" else []
     save_dir = f"outputs/{task}/{attn_method}/analysis_plots"
     os.makedirs(save_dir, exist_ok=True)
     #save_dir = None
@@ -99,4 +114,4 @@ def run_full_analysis(attn_method: str, task: str,):
     sig.to_csv(f"{save_dir}/significant_correlations.csv", index=False)
 
 if __name__ == "__main__": 
-    run_full_analysis(attn_method = "flow", task="task3")
+    run_full_analysis(attn_method = "saliency", task="task3")

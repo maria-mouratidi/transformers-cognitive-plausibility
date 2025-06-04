@@ -3,6 +3,9 @@ import numpy as np
 import gc
 from scripts.probing.load_model import load_llama
 from scripts.probing.raw import encode_input, get_word_mappings
+import pickle
+import json
+from tqdm import tqdm
 
 def register_embedding_list_hook(model, embedding_list):
     def forward_hook(module, inputs, output):
@@ -18,34 +21,46 @@ def register_embedding_gradient_hooks(model, embedding_gradients):
     hook = embedding_layer.register_full_backward_hook(hook_layers)
     return hook
 
-def lm_saliency(model, input_ids, input_mask, pos=-1):
-    
-    torch.enable_grad() # Enable gradient computation
+def lm_saliency_all_tokens(model, input_ids, input_mask):
+    torch.enable_grad()
     device = model.device
-
-    embeddings_list = []  # To store embeddings
-    gradients_list = []  # To store gradients
 
     input_ids = torch.tensor(input_ids, dtype=torch.long).to(device)
     input_mask = torch.tensor(input_mask, dtype=torch.long).to(device)
 
-    handle = register_embedding_list_hook(model, embeddings_list)
-    hook = register_embedding_gradient_hooks(model, gradients_list)
+    all_token_grads = []
+    all_token_embeds = []
 
-    model.zero_grad()  # Clear previous gradients
-    outputs = model(input_ids.unsqueeze(0), attention_mask=input_mask.unsqueeze(0)) # Forward pass
-    logits = outputs.logits
+    for pos in range(1, input_ids.shape[0]):  # skip position 0 (no previous tokens)
+        embeddings_list = []
+        gradients_list = []
 
-    token_logit = logits[0, pos, input_ids[pos]]
-    token_logit.backward()  # Backward pass to compute gradients
+        handle = register_embedding_list_hook(model, embeddings_list)
+        hook = register_embedding_gradient_hooks(model, gradients_list)
 
-    handle.remove()  # Remove the forward hook
-    hook.remove()  # Remove the backward hook
+        model.zero_grad()
 
-    gradients_list = np.array(gradients_list).squeeze() 
-    embeddings_list = np.array(embeddings_list).squeeze()
+        outputs = model(input_ids.unsqueeze(0), attention_mask=input_mask.unsqueeze(0))
+        logits = outputs.logits
 
-    return gradients_list, embeddings_list
+        target_token_id = input_ids[pos]
+        token_logit = logits[0, pos, target_token_id]
+        token_logit.backward()
+
+        handle.remove()
+        hook.remove()
+
+        grads = np.array(gradients_list).squeeze()  # [seq_len, hidden_dim]
+        embeds = np.array(embeddings_list).squeeze()
+
+        all_token_grads.append(grads.copy())
+        all_token_embeds.append(embeds.copy())
+
+        del gradients_list, embeddings_list
+        gc.collect()
+
+    return np.array(all_token_grads), np.array(all_token_embeds)
+
 
 def merge_word_gradients(single_word_mapping, gradients):
     word_gradients = []
@@ -57,11 +72,11 @@ def merge_word_gradients(single_word_mapping, gradients):
 
     return np.array(word_gradients).squeeze()
 
-def l1_grad_norm(grads, single_word_mapping, normalize=False):
+def l1_grad_norm(grads, word_mapping, normalize=False):
     """ Calculate the L1 norm of gradients (single batch only)"""
 
     l1_grad = np.linalg.norm(grads, ord=1, axis=-1).squeeze()
-    l1_grad = merge_word_gradients(single_word_mapping, l1_grad)
+    l1_grad = merge_word_gradients(word_mapping, l1_grad)
     
     if normalize:
         norm = np.linalg.norm(l1_grad, ord=1)
@@ -73,30 +88,56 @@ if __name__ == "__main__":
     model, tokenizer = load_llama("causal")
     model.eval()
     device = model.device
-    task = "task2"
+    task = "task3"
 
     sentences = ["The quick fox.", "Did not see the fox."]
-    #sentences = ["The quick fox."]
     sentences = [sentence.split() for sentence in sentences]
+    with open(f'materials/sentences_{task}.json', 'r') as f:
+        sentences = json.load(f)
 
-
-    for sentence_idx, sentence in enumerate(sentences):
-        inputs, sentences_full, prompt_len = encode_input([sentence], tokenizer, task=task)
+    # Batch encode all sentences and get word mappings
+    inputs, sentences, prompt_len = encode_input(sentences, tokenizer, task=task)
+    word_mappings = get_word_mappings(sentences, inputs, tokenizer)
     
-        word_mappings = get_word_mappings(sentences_full, inputs, tokenizer)
-        input_ids = inputs["input_ids"][0]
-        input_mask = inputs["attention_mask"][0]
-        print(f"Input IDs: {input_ids}")
-        print(f"Input Mask: {input_mask}")
+    saliency = []
+    # Compute saliency for each sentence separately
+    for sentence_idx in tqdm(range(len(sentences)), total=len(sentences), desc="Processing sentences"):
 
-        # Assuming you want to inspect the most probable next word
-        grads, embeds = lm_saliency(
-            model,
-            input_ids,
-            input_mask,
-        )
+        # Extract inputs and word mappings for the current sentence
+        input_ids = inputs["input_ids"][sentence_idx]
+        input_mask = inputs["attention_mask"][sentence_idx]
+        sentence_word_mapping = word_mappings[sentence_idx]
+
+        # Clear gradients before processing
+        model.zero_grad()
+        torch.cuda.empty_cache() if torch.cuda.is_available() else None
+
+        # Compute saliency for this sentence
+        grads_all, embeds_all = lm_saliency_all_tokens(model, input_ids, input_mask)
+
+        sentence_saliency = np.zeros((len(grads_all), len(sentence_word_mapping)), dtype=np.float32)
+        for t, grads in enumerate(grads_all):
+            l1_grad = l1_grad_norm(grads, sentence_word_mapping, normalize=True)
+            sentence_saliency[t] = l1_grad
+        
+        avg_saliency = np.mean((sentence_saliency), axis=0) # New shape: n_words
+        #                                         ^^^^^ axis 0 = across output positions
+        saliency.append(avg_saliency)
+
+        # Clean up after processing
+        del grads_all, embeds_all
+        gc.collect()
+
+    print(saliency[:2])
+
+    with open(f"outputs/{task}/saliency/saliency_data.pkl", "wb") as f:
+        pickle.dump(saliency, f)
 
 
-        l1_grad = l1_grad_norm(grads, word_mappings[0], normalize=True)
-        print(f"Sentence: {' '.join(sentence)}")
-        print("L1 Gradient Norm:", l1_grad)
+
+# Gradient:
+# How much does changing the input embedding of token at position i
+# affect the prediction (logit) of the token at position pos?
+
+# So saliency_tensor[t, i] tells you:
+# Saliency of predicting token at position t w.r.t. embedding at position i
