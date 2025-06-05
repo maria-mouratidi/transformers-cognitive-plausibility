@@ -10,8 +10,7 @@ def partial_reg_plot(
     y: np.ndarray,
     feature_names: list,
     attention_feature: str,
-    task: str,
-    attn_method: str
+    save_dir: str,
 ):
     """
     Generate and save partial regression plots of a specified attention feature
@@ -29,7 +28,7 @@ def partial_reg_plot(
     
     n_components = y.shape[1]
 
-    plot_dir = os.path.join("outputs", task, attn_method, "partreg_plots")
+    plot_dir = os.path.join(save_dir, "partreg_plots")
     os.makedirs(plot_dir, exist_ok=True)
 
     for comp in range(n_components):

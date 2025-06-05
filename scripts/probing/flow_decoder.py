@@ -90,12 +90,12 @@ def process_attention_flow(attention_flow: torch.Tensor, word_mappings: List[Lis
 if __name__ == "__main__":
     # Load your data
     task = "task3"
-    raw_data = torch.load(f"/scratch/7982399/thesis/outputs/{task}/raw/attention_data.pt")
+    raw_data = torch.load(f"/scratch/7982399/thesis/outputs/raw/{task}/llama/attention_data.pt")
     attn = raw_data['attention']  # tensor of shape [layers, batches, heads, seq_len, seq_len]
     word_mappings = raw_data['word_mappings']  # List of (token, position) tuples per batch
     prompt_len = raw_data['prompt_len']  # Length of the prompt in tokens
     
-    flow_dir = f"/scratch/7982399/thesis/outputs/{task}/flow"
+    flow_dir = f"/scratch/7982399/thesis/outputs/flow/{task}/llama"
     os.makedirs(flow_dir, exist_ok=True)
 
     all_flows = []
@@ -106,7 +106,7 @@ if __name__ == "__main__":
             attention_tensor=attn, 
             batch=batch,
         )
-        batch_dir = os.path.join(flow_dir, f"batch_{batch}.pt")  # Save the result for each batch for safety
+        #batch_dir = os.path.join(flow_dir, f"batch_{batch}.pt")  # Save the result for each batch for safety
         #torch.save(result, batch_dir)
         all_flows.append(result)
 

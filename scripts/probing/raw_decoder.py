@@ -179,10 +179,10 @@ if __name__ == "__main__":
         'input_ids': encodings['input_ids'],
         'word_mappings': word_mappings,
         'prompt_len': prompt_len
-    }, f"/scratch/7982399/thesis/outputs/{task}/raw/attention_data.pt")
+    }, f"/scratch/7982399/thesis/outputs/raw/{task}/llama/attention_data.pt")
 
     # Load the saved dictionary
-    loaded_data = torch.load(f"/scratch/7982399/thesis/outputs/{task}/raw/attention_data.pt")
+    loaded_data = torch.load(f"/scratch/7982399/thesis/outputs/raw/{task}/llama/attention_data.pt")
 
     # Extract each component
     attention = loaded_data['attention']
@@ -198,4 +198,4 @@ if __name__ == "__main__":
         'input_ids': input_ids,
         'word_mappings': word_mappings,
         'prompt_len': prompt_len
-    }, f"/scratch/7982399/thesis/outputs/{task}/raw/attention_processed.pt")
+    }, f"/scratch/7982399/thesis/outputs/raw/{task}/llama/attention_processed.pt")

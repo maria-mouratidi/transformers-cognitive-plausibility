@@ -2,7 +2,7 @@ import torch
 import numpy as np
 import gc
 from scripts.probing.load_model import load_llama
-from scripts.probing.raw import encode_input, get_word_mappings
+from scripts.probing.raw_decoder import encode_input, get_word_mappings
 import pickle
 import json
 from tqdm import tqdm
@@ -130,7 +130,7 @@ if __name__ == "__main__":
 
     print(saliency[:2])
 
-    with open(f"outputs/{task}/saliency/saliency_data.pkl", "wb") as f:
+    with open(f"outputs/saliency/{task}/llama/saliency_data.pkl", "wb") as f:
         pickle.dump(saliency, f)
 
 

@@ -161,26 +161,26 @@ def process_attention(attention: torch.Tensor, word_mappings: List[List[Tuple[st
 
 
 if __name__ == "__main__":
-    task = "task2"  # Options: 'none', 'task2', 'task3'
-    #model, tokenizer = load_bert()
-    # subset = False  # For debugging
+    task = "task3"  # Options: 'none', 'task2', 'task3'
+    model, tokenizer = load_bert()
+    subset = False  # For debugging
 
-    # with open(f'materials/sentences_{task}.json', 'r') as f:
-    #     sentences = json.load(f)
+    with open(f'materials/sentences_{task}.json', 'r') as f:
+        sentences = json.load(f)
 
-    # encodings, sentences_full, prompt_len = encode_input(sentences, tokenizer, task)
-    # word_mappings = get_word_mappings(sentences_full, encodings, tokenizer)
-    # attention = get_attention(model, encodings)
-    # print("Attention shape:", attention.shape)
+    encodings, sentences_full, prompt_len = encode_input(sentences, tokenizer, task)
+    word_mappings = get_word_mappings(sentences_full, encodings, tokenizer)
+    attention = get_attention(model, encodings)
+    print("Attention shape:", attention.shape)
 
-    # torch.save({
-    #     'attention': attention,
-    #     'input_ids': encodings['input_ids'],
-    #     'word_mappings': word_mappings,
-    #     'prompt_len': prompt_len
-    # }, f"/scratch/7982399/thesis/outputs/{task}/raw/attention_data_bert.pt")
+    torch.save({
+        'attention': attention,
+        'input_ids': encodings['input_ids'],
+        'word_mappings': word_mappings,
+        'prompt_len': prompt_len
+    }, f"/scratch/7982399/thesis/outputs/{task}/raw/bert/attention_data_bert.pt")
 
-    loaded_data = torch.load(f"/scratch/7982399/thesis/outputs/{task}/raw/attention_data_bert.pt")
+    loaded_data = torch.load(f"/scratch/7982399/thesis/outputs/{task}/raw/bert/attention_data_bert.pt")
     attention_processed = process_attention(
         loaded_data['attention'],
         loaded_data['word_mappings'],
@@ -193,6 +193,6 @@ if __name__ == "__main__":
         'input_ids': loaded_data['input_ids'],
         'word_mappings': loaded_data['word_mappings'],
         'prompt_len': loaded_data['prompt_len']
-    }, f"/scratch/7982399/thesis/outputs/{task}/raw/attention_processed_bert.pt")
+    }, f"/scratch/7982399/thesis/outputs/{task}/raw/bert/attention_processed_bert.pt")
 
     print("Shape:", attention_processed.shape)

@@ -1,6 +1,6 @@
 import torch
-from scripts.probing.saliency import lm_saliency
-from scripts.probing.raw import encode_input, get_word_mappings
+from scripts.probing.saliency_decoder import lm_saliency
+from scripts.probing.raw_decoder import encode_input, get_word_mappings
 from scripts.probing.load_model import load_llama
 
 def compare_tokens():

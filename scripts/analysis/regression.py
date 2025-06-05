@@ -1,6 +1,7 @@
 import warnings
 warnings.filterwarnings("ignore")
 import pandas as pd
+import os
 import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LinearRegression
@@ -14,10 +15,10 @@ from scripts.analysis.perm_feat_imp import compute_permutation_importance
 
 # ------------------ Load and Prepare Data ------------------
 
-attn_method, task = "saliency", "task2"
+attn_method, task, model_name = "raw", "task3", "bert"
 text_df = pd.read_csv(f'materials/text_features_{task}.csv')
 text_df['role'] = text_df['role'].map({'function': 0, 'content': 1})
-gaze_df, attention_tensor = load_processed_data(attn_method=attn_method, task=task)
+gaze_df, attention_tensor, save_dir  = load_processed_data(attn_method=attn_method, task=task, model_name=model_name)
 
 X_text = text_df[['frequency', 'length', 'surprisal', 'role']]
 gaze_features = ['nFixations', 'meanPupilSize', 'GD', 'TRT', 'FFD', 'SFD', 'GPT']
@@ -30,7 +31,7 @@ sent_idx, word_idx = zip(*map_token_indices(gaze_df))
 sent_idx = np.array(sent_idx)
 word_idx = np.array(word_idx)
 
-selected_layers = [31] if attn_method == "raw" else [0]
+selected_layers = [1, 31] if (model_name == "llama" and attn_method == "raw") else [0] #bert, flow and saliency use layer 0
 attention_features = []
 for layer in selected_layers:
     layer_attention = attention_tensor[layer, sent_idx, word_idx]
@@ -143,14 +144,14 @@ adj_r2_baseline = 1 - (1 - r2_baseline) * (n_pca - 1) / (n_pca - 1 - 1)
 
 
 # ------------------ Feature importance explainability measures ------------------
-partial_reg_plot(
-    X=X_train_attn_log,
-    y=y_train_pca,
-    feature_names=list(X_text_attn.columns),
-    attention_feature=f"attention_layer_{selected_layers[0]}",
-    task=task,
-    attn_method=attn_method
-)
+for i in selected_layers:
+    partial_reg_plot(
+        X=X_train_attn_log,
+        y=y_train_pca,
+        feature_names=list(X_text_attn.columns),
+        attention_feature=f"attention_layer_{i}",
+        save_dir=save_dir
+    )
 
 # Compute permutation importances on test set
 importances = compute_permutation_importance(
@@ -165,9 +166,9 @@ importances = compute_permutation_importance(
 # Sort importances in descending order by importance score
 sorted_importances = sorted(importances, key=lambda x: x[1], reverse=True)
 # ------------------ Save Results ------------------
-output_file = f"outputs/{task}/{attn_method}/regression_results.txt"
-with open(output_file, "w") as f:
-    f.write(f"Regression Results {task} {attn_method}\n==================\n\n")
+save_dir = os.path.join(save_dir, "regression_results.txt")
+with open(save_dir, "w") as f:
+    f.write(f"Regression Results Model: {model_name}, ZuCo Task: {task} Using: {attn_method}\n==================\n\n")
     
     f.write("TextOnly_GazeModel vs TextOnly_PCAModel (inverted)\n")
     f.write(f"t-test: t={t_stat_1:.4f}, p={p_val_1:.4f}\n")
@@ -213,4 +214,4 @@ with open(output_file, "w") as f:
     for name, imp, std in sorted_importances:
         f.write(f"{name}: {imp:.6f} ± {std:.6f}\n")
     
-print(f"Regression results saved to {output_file}")
+print(f"Regression results saved to: {save_dir}")

@@ -2,7 +2,7 @@ import torch
 import matplotlib.pyplot as plt
 import seaborn as sns
 import os
-from scripts.probing.raw import subset
+from scripts.probing.raw_decoder import subset
 
 save_dir = "/scratch/7982399/thesis/outputs/attention_plots"
 

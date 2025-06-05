@@ -3,14 +3,14 @@ import seaborn as sns
 import os
 import numpy as np
 
-def plot_regplots(human_df, model_values, features, layer_idx, save_dir=None):
+def plot_regplots(human_df, model_values, features, layer_idx, attn_method, save_dir=None):
     for feature_name in features:
         plt.figure(figsize=(6, 5))
         
         sns.regplot(x=model_values, y=human_df[feature_name], scatter_kws={"s": 10}, line_kws={"color": "red"})
-        plt.title(f'Regplot: Model Layer {layer_idx} Attention vs {feature_name}')
-        plt.xlabel(f'Model Attention (Layer {layer_idx})')
-        plt.ylabel(f'Eye-gaze: {feature_name}')
+        plt.title(f'Model vs Eye-gaze')
+        plt.xlabel(f'Attention Layer {layer_idx}') if attn_method == "raw" else plt.xlabel('Attention Flow') if attn_method == "flow" else plt.xlabel('Gradient Saliency')
+        plt.ylabel(f'{feature_name}')
         plt.tight_layout()
 
         if save_dir:
@@ -25,7 +25,7 @@ def plot_regplots(human_df, model_values, features, layer_idx, save_dir=None):
         plt.close()
 
 # In your `corr_plots.py`
-def plot_feature_corr(results_df, method='pearson', pca=False, save_dir=None, significance_threshold=0.05):
+def plot_feature_corr(results_df, attn_method, method='spearman', pca=False, save_dir=None, significance_threshold=0.05):
 
     col = 'principal_component' if pca else 'feature'
     pivot = results_df.pivot(index='layer', columns=col, values=f'{method}_r')
@@ -36,9 +36,9 @@ def plot_feature_corr(results_df, method='pearson', pca=False, save_dir=None, si
 
     plt.figure(figsize=(12, 8))
     sns.heatmap(pivot, mask=mask, annot=True, fmt=".2f", cmap="coolwarm", center=0, cbar_kws={'label': f'{method.title()} r'})
-    plt.title(f"Layer-wise Attention vs Eye-Gaze Feature Correlations ({method.title()}, p<{significance_threshold})")
-    plt.ylabel("Transformer Layer")
-    plt.xlabel("Eye-Gaze Features")
+    plt.title(f"Model vs Eye-Gaze Correlations ({method.title()}, p<{significance_threshold})")
+    plt.xlabel('Eye-Gaze Features' if not pca else 'Eye-Gaze Principal Components')
+    plt.ylabel('Layer Attention' if attn_method == "raw" else 'Attention Flow' if attn_method == "flow" else 'Gradient Saliency')
     plt.tight_layout()
 
     filename = f"pca_corr_{method}.png" if pca else f"corr_{method}.png"  
