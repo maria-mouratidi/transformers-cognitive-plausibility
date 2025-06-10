@@ -11,7 +11,7 @@ from scripts.analysis.correlation_pca import apply_pca
 
 # ------------------ Load and Prepare Data ------------------
 
-attn_method, task, model_name = "raw", "task3", "bert"
+attn_method, task, model_name = "raw", "task2", "bert"
 text_df = pd.read_csv(f'materials/text_features_{task}.csv')
 text_df['role'] = text_df['role'].map({'function': 0, 'content': 1})
 gaze_df, attention_tensor, save_dir  = load_processed_data(attn_method=attn_method, task=task, model_name=model_name)
@@ -81,7 +81,7 @@ for model_name, X_train, X_test, y_train, y_test, feat_names in model_defs:
                 "task": task,
                 "LLM_model": model_name,
                 "attention_method": attn_method,
-                "model_name": model_id,
+                "OLS_model": model_id,
                 "rsquared": r2,
                 "rsquared_adj": r2_adj,
                 "rmse": rmse
@@ -97,7 +97,7 @@ for model_name, X_train, X_test, y_train, y_test, feat_names in model_defs:
                     "task": task,
                     "LLM_model": model_name,
                     "attention_method": attn_method,
-                    "model_name": model_id,
+                    "OLS_model": model_id,
                     "feature_name": feat,
                     "coefficient": coef,
                     "t": tval,
@@ -124,7 +124,7 @@ for model_name, X_train, X_test, y_train, y_test, feat_names in model_defs:
             "task": task,
             "LLM_model": model_name,
             "attention_method": attn_method,
-            "model_name": model_id,
+            "OLS_model": model_id,
             "rsquared": r2,
             "rsquared_adj": r2_adj,
             "rmse": rmse
@@ -164,7 +164,7 @@ for i, m1 in enumerate(model_ids):
             stat, p = np.nan, np.nan
         for m_from, m_to in [(m1, m2), (m2, m1)]:
             idx = next((k for k, d in enumerate(model_performance)
-                        if d["model_name"] == m_from), None)
+                        if d["OLS_model"] == m_from), None)
             if idx is not None:
                 key = f"wilcoxon_vs_{m_to}"
                 model_performance[idx][key] = p

@@ -15,7 +15,7 @@ def load_processed_data(attn_method: str, task: str, model_name: str = "llama"):
         attention = model_data['attention_processed'].cpu()
     
     elif attn_method == "flow":
-        attention = torch.load(f"/scratch/7982399/thesis/outputs/{attn_method}/{task}/{model_name}attention_flow_processed.pt")
+        attention = torch.load(f"/scratch/7982399/thesis/outputs/{attn_method}/{task}/{model_name}/attention_flow_processed.pt")
         attention = torch.unsqueeze(attention, 0) 
     
     elif attn_method == "saliency":
