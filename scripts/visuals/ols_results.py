@@ -97,11 +97,11 @@ def plot_metric(plot_df, metric, filename):
 
 # --- PLOT FOR ALL MODELS EXCEPT BERT ---
 not_bert_df = plot_df[~plot_df["source_path"].str.contains("bert", case=False, na=False)]
-plot_metric(not_bert_df, "rsquared", "outputs/unified_ols_barplot_combined_r2_all.png")
-plot_metric(not_bert_df, "rmse", "outputs/unified_ols_barplot_combined_rmse_all.png")
+plot_metric(not_bert_df, "rsquared", "outputs/ols_barplot_r2.png")
+plot_metric(not_bert_df, "rmse", "outputs/ols_barplot_rmse.png")
 
 # --- PLOT FOR BERT ONLY ---
 bert_df = plot_df[plot_df["source_path"].str.contains("bert", case=False, na=False)]
 if not bert_df.empty:
-    plot_metric(bert_df, "rsquared", "outputs/unified_ols_barplot_combined_r2_bert.png")
-    plot_metric(bert_df, "rmse", "outputs/unified_ols_barplot_combined_rmse_bert.png")
+    plot_metric(bert_df, "rsquared", "outputs/ols_barplot_r2_bert.png")
+    plot_metric(bert_df, "rmse", "outputs/ols_barplot_rmse_bert.png")

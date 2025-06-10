@@ -87,7 +87,7 @@ def process_attention_flow(attention_flow: torch.Tensor, word_mappings: List[Lis
 
 if __name__ == "__main__":
 
-    task, model_name = "task3", "bert"
+    task, model_name = "task2", "bert"
     raw_data = torch.load(f"/scratch/7982399/thesis/outputs/raw/{task}/{model_name}/attention_data.pt")
     attn = raw_data['attention']
     word_mappings = raw_data['word_mappings']
