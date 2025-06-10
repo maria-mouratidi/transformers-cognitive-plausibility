@@ -1,9 +1,8 @@
 import os
 import torch
 import transformers
-from transformers import AutoTokenizer, AutoModel, AutoModelForCausalLM, AutoModelForQuestionAnswering
+from transformers import AutoTokenizer, AutoModel, AutoModelForCausalLM, AutoModelForQuestionAnswering, BertForMaskedLM
 from typing import List, Tuple, Dict, Union, Literal
-
 transformers.logging.set_verbosity_error()
 
 hf_token = "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"
@@ -29,12 +28,7 @@ def load_llama(
     device = "cuda" if torch.cuda.is_available() else "cpu"
     #device = "cpu"
 
-    if model_type == "causal":
-        model_class = AutoModelForCausalLM
-    elif model_type == "qa":
-        model_class = AutoModelForQuestionAnswering
-    else:
-        model_class = AutoModel
+    model_class = AutoModelForCausalLM
 
     # Initialize tokenizer
     tokenizer = AutoTokenizer.from_pretrained(
@@ -47,8 +41,7 @@ def load_llama(
         cache_dir=cache_dir,
         torch_dtype=torch.float16,
         attn_implementation="eager",
-        device_map="auto",
-        low_cpu_mem_usage=True)#.to(device)
+        device_map="auto")#.to(device)
     
     model.config.pad_token_id = tokenizer.pad_token_id
     
@@ -58,15 +51,20 @@ def load_llama(
 def load_bert(
     model_id: str = "bert-base-uncased",
     cache_dir: str = '/scratch/7982399/hf_cache/bert',
-    local_path: str = '/scratch/7982399/hf_cache/bert') -> Tuple[AutoModel, AutoTokenizer]:
+    local_path: str = '/scratch/7982399/hf_cache/bert',
+    maskedLM: bool = False) -> Tuple[AutoModel, AutoTokenizer]:
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = AutoModel.from_pretrained(
+
+    if maskedLM:
+        model_class = BertForMaskedLM
+    else:
+        model_class = AutoModel
+    model = model_class.from_pretrained(
         local_path if local_path else model_id,
         cache_dir=cache_dir,
         torch_dtype=torch.float32,  # BERT is typically FP32
-        device_map="auto"
-    )
+    ).to(device)
     tokenizer = AutoTokenizer.from_pretrained(local_path if local_path else model_id, cache_dir=cache_dir)
     model.eval()
     return model, tokenizer

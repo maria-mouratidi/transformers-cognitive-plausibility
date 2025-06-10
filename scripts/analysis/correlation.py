@@ -35,11 +35,10 @@ def correlation_analysis(attention_nonpadded, human_df):
                 'pearson_r': pearson_r,
                 'pearson_p_value': pearson_p,
                 'spearman_r': spearman_r,
-                'spearman_p_value': spearman_p
+                'spearman_p_value': spearman_p,
+                'layer': layer_idx
             }
 
-            if num_layers > 1:
-                row['layer'] = layer_idx
             results.append(row)
     
     return pd.DataFrame(results)
@@ -63,9 +62,9 @@ def run_full_analysis(attn_method: str, task: str, model_name: bool):
     print(f"Attention non-padded shape: {attention_nonpadded.shape}")
     
     # --- Exploratory Analysis ---
-    if model_name == "llama":
+    if model_name == "llama" and attn_method == "raw":
         layers_to_analyze = [0, 1, 31]
-    elif model_name == "bert":
+    elif model_name == "bert" and attn_method == "raw":
         layers_to_analyze = [0, 4, 11]
     else:
         layers_to_analyze = [] 
@@ -90,4 +89,4 @@ def run_full_analysis(attn_method: str, task: str, model_name: bool):
     sig.to_csv(f"{save_dir}/significant_correlations.csv", index=False)
 
 if __name__ == "__main__": 
-    run_full_analysis(attn_method = "raw", task="task3", model_name="llama")
+    run_full_analysis(attn_method = "saliency", task="task2", model_name="llama")
