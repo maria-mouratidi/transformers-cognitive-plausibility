@@ -11,7 +11,7 @@ from scripts.analysis.correlation_pca import apply_pca
 
 # ------------------ Load and Prepare Data ------------------
 
-attn_method, task, model_name = "raw", "task2", "bert"
+attn_method, task, model_name = "saliency", "task3", "llama"
 text_df = pd.read_csv(f'materials/text_features_{task}.csv')
 text_df['role'] = text_df['role'].map({'function': 0, 'content': 1})
 gaze_df, attention_tensor, save_dir  = load_processed_data(attn_method=attn_method, task=task, model_name=model_name)
