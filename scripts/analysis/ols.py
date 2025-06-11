@@ -17,7 +17,7 @@ attn_methods = ["raw", "flow", "saliency"]
 for model_name in llm_models:
     for task in tasks:
         for attn_method in attn_methods:
-            if model_name == "bert" and attn_method == "flow":
+            if attn_method == "flow":
                 print(f"Skipping {model_name}, {task}, {attn_method} due to missing data.")
                 continue
             print(f"Running OLS for {model_name}, {task}, {attn_method}")
@@ -41,6 +41,7 @@ for model_name in llm_models:
             selected_layers = [1, 31] if (model_name == "llama" and attn_method == "raw") else [0]
             attention_features = []
             print("Shape of attention: ", attention_tensor.shape)
+
             for layer in selected_layers:
                 layer_attention = attention_tensor[layer, sent_idx, word_idx]
                 attention_features.append(layer_attention)

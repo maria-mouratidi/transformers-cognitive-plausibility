@@ -89,4 +89,14 @@ def run_full_analysis(attn_method: str, task: str, model_name: bool):
     sig.to_csv(f"{save_dir}/significant_correlations.csv", index=False)
 
 if __name__ == "__main__": 
-    run_full_analysis(attn_method = "saliency", task="task2", model_name="llama")
+    llm_models = ["llama", "bert"]
+    tasks = ["task2", "task3"]
+    attn_methods = ["raw", "flow", "saliency"]
+
+    for model_name in llm_models:
+        for task in tasks:
+            for attn_method in attn_methods:
+                if model_name == "bert" and attn_method == "flow":
+                    print(f"Skipping {model_name}, {task}, {attn_method} due to missing data.")
+                    continue
+                run_full_analysis(attn_method = attn_method, task=task, model_name=model_name)

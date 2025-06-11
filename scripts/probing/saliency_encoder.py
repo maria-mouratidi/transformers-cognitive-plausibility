@@ -127,7 +127,6 @@ if __name__ == "__main__":
         avg_saliency = np.mean((sentence_saliency), axis=0) # New shape: n_words
         #                                         ^^^^^ axis 0 = across output positions
 
-        avg_saliency = avg_saluebcy / avg_saliency
         saliency.append(avg_saliency)
 
         # Clean up after processing

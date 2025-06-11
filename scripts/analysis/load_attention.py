@@ -5,6 +5,10 @@ import numpy as np
 import os
 
 def load_processed_data(attn_method: str, task: str, model_name: str = "llama"):
+    if task == "task2":
+        prompt_len = 24
+    elif task == "task3":
+        prompt_len = 11
     
     human_df = pd.read_csv(f'data/{task}/processed/processed_participants.csv')
     print(f"\nTotal NaN values: {human_df.isna().sum().sum()}")
@@ -16,7 +20,7 @@ def load_processed_data(attn_method: str, task: str, model_name: str = "llama"):
     
     elif attn_method == "flow":
         attention = torch.load(f"/scratch/7982399/thesis/outputs/{attn_method}/{task}/{model_name}/attention_flow_processed.pt")
-        attention = torch.unsqueeze(attention, 0) 
+        attention = torch.unsqueeze(attention, 0).cpu()
     
     elif attn_method == "saliency":
         with open(f"/scratch/7982399/thesis/outputs/{attn_method}/{task}/{model_name}/saliency_data.pkl", 'rb') as f:
@@ -26,7 +30,7 @@ def load_processed_data(attn_method: str, task: str, model_name: str = "llama"):
             attention = np.nan_to_num(attention, nan=0.0)  # Replace NaN with 0.0
             attention = torch.tensor(attention)
             attention = torch.unsqueeze(attention, 0)  # Add a dummy layer dimension
-
+            attention = attention[:, :, prompt_len:] 
     def get_save_dir(base="outputs", subdir=""):
         path_parts = [base, attn_method, task, model_name, subdir]
         return os.path.join(*path_parts)

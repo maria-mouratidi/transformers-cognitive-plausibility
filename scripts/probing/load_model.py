@@ -26,7 +26,7 @@ def load_llama(
     """
     # Setup device
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    #device = "cpu"
+    device = "cpu"
 
     model_class = AutoModelForCausalLM
 
@@ -35,13 +35,20 @@ def load_llama(
         local_path if local_path else model_id,
         cache_dir=cache_dir, use_auth_token=hf_token)
     
+    # Set tokenizer padding token if not already set
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token  # Use EOS token as padding token
+    
     # Load model
     model = model_class.from_pretrained(
         local_path if local_path else model_id,
         cache_dir=cache_dir,
         torch_dtype=torch.float16,
         attn_implementation="eager",
-        device_map="auto")#.to(device)
+    ).to(device)
+        #device_map="auto", )# Automatically map to GPU if available
+
+
     
     model.config.pad_token_id = tokenizer.pad_token_id
     
