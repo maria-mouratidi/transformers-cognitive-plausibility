@@ -21,9 +21,6 @@ def plot_regplots(human_df, model_values, features, layer_idx, attn_method, save
             plt.savefig(save_path)
             print(f"Saved heatmap to {save_path}")
 
-        plt.show()
-        plt.close()
-
 # In your `corr_plots.py`
 def plot_feature_corr(results_df, attn_method, method='spearman', pca=False, save_dir=None, significance_threshold=0.05):
 
@@ -45,8 +42,6 @@ def plot_feature_corr(results_df, attn_method, method='spearman', pca=False, sav
     if save_dir:
         os.makedirs(save_dir, exist_ok=True)
         plt.savefig(f"{save_dir}/{filename}")
-    plt.show()
-    plt.close()
 
 
 def plot_eyegaze_corr(human_df, features, save_dir=None):
@@ -63,8 +58,5 @@ def plot_eyegaze_corr(human_df, features, save_dir=None):
         save_path = os.path.join(save_dir, f'intercorr_heatmap.png')
         plt.savefig(save_path)
         print(f"Saved heatmap to {save_path}")
-    
-    plt.show()
-    plt.close()
 
 

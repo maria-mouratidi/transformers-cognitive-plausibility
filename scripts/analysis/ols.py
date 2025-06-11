@@ -18,7 +18,7 @@ for model_name in llm_models:
     for task in tasks:
         for attn_method in attn_methods:
             if attn_method == "flow":
-                print(f"Skipping {model_name}, {task}, {attn_method} due to missing data.")
+                #print(f"Skipping {model_name}, {task}, {attn_method} due to missing data.")
                 continue
             print(f"Running OLS for {model_name}, {task}, {attn_method}")
 
@@ -75,6 +75,7 @@ for model_name in llm_models:
             per_sample_errors = {}
 
             for ols_model_name, X_train, X_test, y_train, y_test, feat_names in model_defs:
+                # Check if y_train is multi-output (DataFrame)
                 if isinstance(y_train, pd.DataFrame) or (hasattr(y_train, 'shape') and len(y_train.shape) > 1 and y_train.shape[1] > 1):
                     for idx, y_col in enumerate(y_train.columns):
                         y_train_col = y_train[y_col]
@@ -84,13 +85,14 @@ for model_name in llm_models:
                         ols_model = OLS(y_train_col, X_train_const).fit()
                         y_pred = ols_model.predict(X_test_const)
                         errors = y_test_col - y_pred
-                        per_sample_errors[f"{ols_model_name}_{y_col}"] = errors.values
+                        # ols_model_name is e.g. "TextOnly_Gaze" or "TextAttn_PCA"
+                        model_id = f"{ols_model_name}_{y_col}"
+                        per_sample_errors[model_id] = errors.values
                         r2 = ols_model.rsquared
                         n = len(y_test_col)
                         p = X_test_const.shape[1] - 1
                         r2_adj = 1 - (1 - r2) * (n - 1) / (n - p - 1)
                         rmse = np.sqrt(np.mean((y_test_col - y_pred) ** 2))
-                        model_id = f"{ols_model_name}_{y_col}"
                         r2_dict[model_id] = r2
                         model_performance.append({
                             "task": task,
@@ -128,13 +130,13 @@ for model_name in llm_models:
                     ols_model = OLS(y_train, X_train_const).fit()
                     y_pred = ols_model.predict(X_test_const)
                     errors = y_test - y_pred
-                    per_sample_errors[ols_model_name] = errors.values
+                    model_id = ols_model_name  # Should be "TextOnly_PCA" or similar
+                    per_sample_errors[model_id] = errors.values
                     r2 = ols_model.rsquared
                     n = len(y_test)
                     p = X_test_const.shape[1] - 1
                     r2_adj = 1 - (1 - r2) * (n - 1) / (n - p - 1)
                     rmse = np.sqrt(np.mean((y_test - y_pred) ** 2))
-                    model_id = ols_model_name
                     r2_dict[model_id] = r2
                     model_performance.append({
                         "task": task,
@@ -185,10 +187,10 @@ for model_name in llm_models:
                             model_performance[idx][key] = p
 
             # --- Save Results ---
-            results_dir = os.path.join(save_dir, f"ols/{model_name}_{task}_{attn_method}")
-            os.makedirs(results_dir, exist_ok=True)
             perf_df = pd.DataFrame(model_performance)
             feat_df = pd.DataFrame(feature_importance)
+            results_dir = os.path.join(save_dir, "ols")
+            os.makedirs(results_dir, exist_ok=True)
             perf_df.to_csv(os.path.join(results_dir, "model_performance.csv"), index=False)
             feat_df.to_csv(os.path.join(results_dir, "feature_importance.csv"), index=False)
-            print(f"OLS results saved to: {results_dir}")
+            print(f"OLS results saved to: {results_dir}\n")

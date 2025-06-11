@@ -15,7 +15,7 @@ def load_processed_data(attn_method: str, task: str, model_name: str = "llama"):
     human_df.fillna(0, inplace=True) # temporary fix for NaN values in the dataframe
 
     if attn_method == "raw":
-        model_data = torch.load(f"/scratch/7982399/thesis/outputs/{attn_method}/{task}/{model_name}/attention_processed.pt")  
+        model_data = torch.load(f"/scratch/7982399/thesis/outputs/{attn_method}/{task}/{model_name}/attention_processed.pt", map_location="cpu")  
         attention = model_data['attention_processed'].cpu()
     
     elif attn_method == "flow":

@@ -8,7 +8,7 @@ from scripts.visuals.hist import *
 from scripts.visuals.normality_test import *
 from scripts.visuals.corr_plots import *
 
-FEATURES = ['nFixations', 'meanPupilSize', 'GD', 'TRT', 'FFD', 'SFD', 'GPT']
+FEATURES = ['nFixations', 'meanPupilSize', 'GD', 'TRT', 'FFD',] #'SFD', 'GPT'] # exclude 'SFD' and 'GPT' because they are very specific features, not very interesting for analysis.
 
 def map_token_indices(human_df):
     token_indices = [(row['Sent_ID'], row['Word_ID']) for _, row in human_df.iterrows()]
