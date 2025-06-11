@@ -8,6 +8,7 @@ from scipy.stats import wilcoxon
 from sklearn.model_selection import train_test_split
 from scripts.analysis.correlation import load_processed_data, map_token_indices
 from scripts.analysis.correlation_pca import apply_pca
+from scripts.analysis.correlation import FEATURES
 
 # ------------------ Configurations ------------------
 llm_models = ["llama", "bert"]
@@ -28,10 +29,9 @@ for model_name in llm_models:
             gaze_df, attention_tensor, save_dir  = load_processed_data(attn_method=attn_method, task=task, model_name=model_name)
 
             X_text = text_df[['frequency', 'length', 'surprisal', 'role']]
-            gaze_features = ['nFixations', 'meanPupilSize', 'GD', 'TRT', 'FFD', 'SFD', 'GPT']
-            y_gaze = gaze_df[gaze_features]
+            y_gaze = gaze_df[FEATURES]
 
-            y_pca, pca_obj, explained_var, cum_var = apply_pca(gaze_df, gaze_features)
+            y_pca, pca_obj, explained_var, cum_var = apply_pca(gaze_df, FEATURES)
 
             # --- Attention Features ---
             sent_idx, word_idx = zip(*map_token_indices(gaze_df))
