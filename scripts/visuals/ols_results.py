@@ -2,20 +2,30 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 import glob
+from scripts.analysis.correlation import FEATURES
 
-all_perf = []
-for perf_path in glob.glob("outputs/**/**/**/ols/model_performance.csv", recursive=True):
-    df = pd.read_csv(perf_path)
-    df["source_path"] = perf_path
-    all_perf.append(df)
 
-if all_perf:
-    perf_df = pd.concat(all_perf, ignore_index=True)
-    perf_df.to_csv("outputs/unified_model_performance.csv", index=False)
-    print("Unified performance CSV created at outputs/unified_model_performance.csv")
+llm_models = ["llama", "bert"]
+tasks = ["task2", "task3"]
+attn_methods = ["raw", "flow", "saliency"]
+# all_perf = []
+# for model_name in llm_models:
+#     for task in tasks:
+#         for attn_method in attn_methods:
+#             perf_path = f"outputs/{attn_method}/{task}/{model_name}/ols/model_performance.csv"
+#             # if attn_method == "flow" and model_name == "bert":
+#             #     continue
+#             df = pd.read_csv(perf_path)
+#             df["source_path"] = perf_path
+#             all_perf.append(df)
+
+# if all_perf:
+#     perf_df = pd.concat(all_perf, ignore_index=True)
+#     perf_df.to_csv("outputs/unified_model_performance.csv", index=False)
+#     print("Unified performance CSV created at outputs/unified_model_performance.csv")
 
 # --- LOAD UNIFIED RESULTS ---
-perf_df = pd.read_csv("outputs/unified_model_performance.csv")
+perf_df = pd.read_csv("outputs/ols_unified_performance.csv")
 
 # --- PREPROCESS ---
 def parse_model_type(ols_model):
@@ -36,72 +46,55 @@ def parse_target_type(ols_model):
     else:
         return "Other"
 
-perf_df["ModelType"] = perf_df["OLS_model"].apply(parse_model_type)
-perf_df["TargetType"] = perf_df["OLS_model"].apply(parse_target_type)
+perf_df["ModelType"] = perf_df["predictors"].apply(lambda x: "Attention" if x in ["raw", "flow", "saliency"] else "TextOnly")
+perf_df["TargetType"] = perf_df["dependent"].apply(lambda x: "Gaze" if x in FEATURES else ("PCA" if x == "pca" else "Other"))
 
 # Only keep relevant models
 plot_df = perf_df[perf_df["ModelType"].isin(["Attention", "TextOnly"])]
 
 def plot_metric(plot_df, metric, filename):
+
+    # Create a bar_type column for grouping
+    plot_df = plot_df.copy()
+    plot_df["bar_type"] = plot_df.apply(
+        lambda row: "text only" if row["ModelType"] == "TextOnly"
+        else row["attention_method"], axis=1
+    )
+
+    # bars for text only, or attention with raw/flow/saliency
+    plot_df = plot_df[
+        ((plot_df["ModelType"] == "TextOnly") & (plot_df["bar_type"] == "text_only")) |
+        ((plot_df["ModelType"] == "Attention") & (plot_df["bar_type"].isin(["raw", "flow", "saliency"])))
+    ]
+
+    # Set x_label
+    plot_df["x_label"] = plot_df["TargetType"] + " - " + plot_df["task"].astype(str)
+
+    # Set order for x and hue
     target_order = ["Gaze", "PCA"]
     task_order = sorted(plot_df["task"].unique())
     x_order = [f"{target} - {task}" for target in target_order for task in task_order]
+    hue_order = ["text only", "raw", "flow", "saliency"]
 
-    plot_df["x_label"] = plot_df["TargetType"] + " - " + plot_df["task"]
+    plt.figure(figsize=(12, 6))
+    ax = sns.barplot(data=plot_df, x="x_label", y=metric, hue="bar_type", order=x_order, hue_order=hue_order, errorbar="sd")
 
-    g = sns.catplot(
-        data=plot_df,
-        kind="bar",
-        x="x_label",
-        y=metric,
-        hue="ModelType",
-        col="attention_method",
-        ci="sd",
-        height=5,
-        aspect=1.3,
-        dodge=True,
-        order=x_order
-    )
-
-    g.set_axis_labels("Target & Task", f"Test {metric.upper()}")
-    g.set_titles("Attention Method: {col_name}")
-    g._legend.set_title("Model Type")
-
-    # Wilcoxon annotation for R² and RMSE
-    from scipy.stats import wilcoxon
-    for ax, (attn_method, attn_df) in zip(g.axes.flat, plot_df.groupby("attention_method")):
-        for xtick, (x_label, group) in enumerate(attn_df.groupby("x_label")):
-            attn_vals = group[group["ModelType"] == "Attention"][metric]
-            text_vals = group[group["ModelType"] == "TextOnly"][metric]
-            if not attn_vals.empty and not text_vals.empty:
-                try:
-                    stat, p = wilcoxon(attn_vals, text_vals)
-                    if p < 0.05:
-                        max_height = max(attn_vals.mean(), text_vals.mean())
-                        ax.annotate(
-                            "*",
-                            xy=(xtick, max_height),
-                            xytext=(0, 8),
-                            textcoords="offset points",
-                            ha="center",
-                            va="bottom",
-                            color="red",
-                            fontsize=18
-                        )
-                except Exception:
-                    pass
-
+    ax.set_xlabel("Target & Task")
+    ax.set_ylabel(f"{metric.capitalize()}")
+    ax.set_title(f"Ordinary Least Squares Models")
+    ax.set_ylim(top=0.5)  # Set max y-tick to 0.5
+    ax.legend(title="Predictors")
     plt.tight_layout()
     plt.savefig(filename)
     plt.close()
 
 # --- PLOT FOR ALL MODELS EXCEPT BERT ---
-not_bert_df = plot_df[~plot_df["source_path"].str.contains("bert", case=False, na=False)]
-plot_metric(not_bert_df, "rsquared", "outputs/ols_barplot_r2.png")
-plot_metric(not_bert_df, "rmse", "outputs/ols_barplot_rmse.png")
+not_bert_df = plot_df[plot_df["llm_model"] != "bert"]
+plot_metric(not_bert_df, "rsquared", "outputs/ols_barplot_r2_llama.png")
+#plot_metric(not_bert_df, "rmse", "outputs/ols_barplot_rmse_llama.png")
 
 # --- PLOT FOR BERT ONLY ---
-bert_df = plot_df[plot_df["source_path"].str.contains("bert", case=False, na=False)]
+bert_df = plot_df[plot_df["llm_model"] == "bert"]
 if not bert_df.empty:
     plot_metric(bert_df, "rsquared", "outputs/ols_barplot_r2_bert.png")
-    plot_metric(bert_df, "rmse", "outputs/ols_barplot_rmse_bert.png")
+    #plot_metric(bert_df, "rmse", "outputs/ols_barplot_rmse_bert.png")

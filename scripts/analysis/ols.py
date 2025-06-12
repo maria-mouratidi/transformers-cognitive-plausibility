@@ -4,8 +4,8 @@ import pandas as pd
 import os
 import numpy as np
 from statsmodels.api import OLS, add_constant
-from scipy.stats import wilcoxon
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
 from scripts.analysis.correlation import load_processed_data, map_token_indices
 from scripts.analysis.correlation_pca import apply_pca
 from scripts.analysis.correlation import FEATURES
@@ -14,183 +14,124 @@ from scripts.analysis.correlation import FEATURES
 llm_models = ["llama", "bert"]
 tasks = ["task2", "task3"]
 attn_methods = ["raw", "flow", "saliency"]
+predictor_types = ["text", "raw", "flow", "saliency"]
+dependent_types = ["gaze", "pca"]
 
-for model_name in llm_models:
-    for task in tasks:
+results = []
+
+def get_attention_features(attention_tensor, gaze_df, model_name, attn_method):
+    sent_idx, word_idx = zip(*map_token_indices(gaze_df))
+    sent_idx = np.array(sent_idx)
+    word_idx = np.array(word_idx)
+    if attn_method == "raw" and model_name == "llama":
+        selected_layers = [1, 31]
+    else:
+        selected_layers = [0]
+    features = []
+    for layer in selected_layers:
+        features.append(attention_tensor[layer, sent_idx, word_idx])
+    X_attention = np.column_stack(features)
+    attn_names = [f"attention_layer_{i}" for i in selected_layers]
+    return X_attention, attn_names
+
+def scale_text_features(X_train, X_test):
+    scaler = StandardScaler()
+    cols = ['frequency', 'length', 'surprisal']
+    X_train_scaled = X_train.copy()
+    X_test_scaled = X_test.copy()
+    X_train_scaled[cols] = scaler.fit_transform(X_train[cols])
+    X_test_scaled[cols] = scaler.transform(X_test[cols])
+    return X_train_scaled, X_test_scaled
+
+def run_ols(X_train, X_test, y_train, y_test, predictors, meta):
+    X_train_const = add_constant(X_train)
+    X_test_const = add_constant(X_test)
+    ols_model = OLS(y_train, X_train_const).fit()
+    y_pred = ols_model.predict(X_test_const)
+    r2 = ols_model.rsquared
+    n = len(y_test)
+    p = X_test_const.shape[1] - 1
+    r2_adj = 1 - (1 - r2) * (n - 1) / (n - p - 1)
+    rmse = np.sqrt(np.mean((y_test - y_pred) ** 2))
+    for feat in X_train_const.columns:
+        results.append({
+            **meta,
+            "predictors": "text_only" if meta["predictors"] == "text" else f"text+{meta['attn_method']}",
+            "dependent": meta["dependent"],
+            "feature_name": feat,
+            "coefficient": ols_model.params[feat],
+            "t": ols_model.tvalues[feat],
+            "std_error": ols_model.bse[feat],
+            "p_value": ols_model.pvalues[feat],
+            "rsquared": r2,
+            "rsquared_adj": r2_adj,
+            "rmse": rmse
+        })
+
+for task in tasks:
+    text_df = pd.read_csv(f'materials/text_features_{task}.csv')
+    text_df['role'] = text_df['role'].map({'function': 0, 'content': 1})
+    X_text = text_df[['frequency', 'length', 'surprisal', 'role']]
+    gaze_df, _, _ = load_processed_data(attn_method="raw", task=task, model_name="llama")
+    y_gaze = gaze_df[FEATURES]
+    y_pca, _, _, _ = apply_pca(gaze_df, FEATURES, n_components=1)
+    # Split for baseline models
+    X_train_text, X_test_text, y_train_gaze, y_test_gaze, y_train_pca, y_test_pca = train_test_split(
+        X_text, y_gaze, y_pca, test_size=0.2, random_state=42
+    )
+    X_train_text_scaled, X_test_text_scaled = scale_text_features(X_train_text, X_test_text)
+    # 1. TextOnly Gaze (baseline)
+    for col in y_gaze.columns:
+        run_ols(
+            X_train_text_scaled, X_test_text_scaled, y_train_gaze[col], y_test_gaze[col],
+            predictors=list(X_train_text_scaled.columns),
+            meta={"task": task, "llm_model": "none", "attn_method": "none", "predictors": "text", "dependent": col}
+        )
+    # 2. TextOnly PCA (baseline 2)
+    run_ols(
+        X_train_text_scaled, X_test_text_scaled, y_train_pca, y_test_pca,
+        predictors=list(X_train_text_scaled.columns),
+        meta={"task": task, "llm_model": "none", "attn_method": "none", "predictors": "text", "dependent": "pca"}
+    )
+
+    for model_name in llm_models:
         for attn_method in attn_methods:
-            if attn_method == "flow":
-                #print(f"Skipping {model_name}, {task}, {attn_method} due to missing data.")
-                continue
-            print(f"Running OLS for {model_name}, {task}, {attn_method}")
-
-            # --- Load and Prepare Data ---
-            text_df = pd.read_csv(f'materials/text_features_{task}.csv')
-            text_df['role'] = text_df['role'].map({'function': 0, 'content': 1})
-            gaze_df, attention_tensor, save_dir  = load_processed_data(attn_method=attn_method, task=task, model_name=model_name)
-
-            X_text = text_df[['frequency', 'length', 'surprisal', 'role']]
+            # if attn_method == "flow" and model_name == "bert" and task == "task2":
+            #     continue
+            gaze_df, attention_tensor, save_dir = load_processed_data(attn_method=attn_method, task=task, model_name=model_name)
+            if model_name == "bert" and attn_method == "flow":
+                print(f"Processing {task} with {model_name} and {attn_method} attention: shape: {attention_tensor.shape}")
             y_gaze = gaze_df[FEATURES]
-
-            y_pca, pca_obj, explained_var, cum_var = apply_pca(gaze_df, FEATURES)
-
-            # --- Attention Features ---
-            sent_idx, word_idx = zip(*map_token_indices(gaze_df))
-            sent_idx = np.array(sent_idx)
-            word_idx = np.array(word_idx)
-
-            selected_layers = [1, 31] if (model_name == "llama" and attn_method == "raw") else [0]
-            attention_features = []
-            print("Shape of attention: ", attention_tensor.shape)
-
-            for layer in selected_layers:
-                layer_attention = attention_tensor[layer, sent_idx, word_idx]
-                attention_features.append(layer_attention)
-
-            X_attention = np.column_stack(attention_features)
-            attention_feature_names = [f'attention_layer_{i}' for i in selected_layers]
-
+            y_pca, _, _, _ = apply_pca(gaze_df, FEATURES, n_components=1)
+            X_attention, attn_names = get_attention_features(attention_tensor, gaze_df, model_name, attn_method)
             X_text_attn = X_text.copy()
-            for idx, name in enumerate(attention_feature_names):
+            for idx, name in enumerate(attn_names):
                 X_text_attn[name] = X_attention[:, idx]
-
-            # --- Train-Test Split ---
-            (X_train_text, X_test_text, 
-             y_train_gaze, y_test_gaze, 
-             y_train_pca, y_test_pca, 
-             X_train_attn, X_test_attn) = train_test_split(
-                X_text, y_gaze, y_pca, X_text_attn, test_size=0.2, random_state=42
+            # Split
+            X_train_attn, X_test_attn, y_train_gaze, y_test_gaze, y_train_pca, y_test_pca = train_test_split(
+                X_text_attn, y_gaze, y_pca, test_size=0.2, random_state=42
+            )
+            X_train_attn_scaled, X_test_attn_scaled = scale_text_features(X_train_attn, X_test_attn)
+            # Add attention columns (do not scale)
+            for name in attn_names:
+                X_train_attn_scaled[name] = X_train_attn[name].values
+                X_test_attn_scaled[name] = X_test_attn[name].values
+            predictors = list(X_train_attn_scaled.columns)
+            # 3/5/7. Attention Gaze
+            for col in y_gaze.columns:
+                run_ols(
+                    X_train_attn_scaled, X_test_attn_scaled, y_train_gaze[col], y_test_gaze[col],
+                    predictors=predictors,
+                    meta={"task": task, "llm_model": model_name, "attn_method": attn_method, "predictors": attn_method, "dependent": col}
+                )
+            # 4/6/8. Attention PCA
+            run_ols(
+                X_train_attn_scaled, X_test_attn_scaled, y_train_pca, y_test_pca,
+                predictors=predictors,
+                meta={"task": task, "llm_model": model_name, "attn_method": attn_method, "predictors": attn_method, "dependent": "pca"}
             )
 
-            # --- OLS Models ---
-            model_defs = [
-                ("TextOnly_Gaze", X_train_text, X_test_text, y_train_gaze, y_test_gaze, list(X_text.columns)),
-                ("TextOnly_PCA", X_train_text, X_test_text, y_train_pca, y_test_pca, list(X_text.columns)),
-                ("TextAttn_PCA", X_train_attn, X_test_attn, y_train_pca, y_test_pca, list(X_text_attn.columns)),
-                ("TextAttn_Gaze", X_train_attn, X_test_attn, y_train_gaze, y_test_gaze, list(X_text_attn.columns)),
-            ]
-
-            model_performance = []
-            feature_importance = []
-            r2_dict = {}
-            per_sample_errors = {}
-
-            for ols_model_name, X_train, X_test, y_train, y_test, feat_names in model_defs:
-                # Check if y_train is multi-output (DataFrame)
-                if isinstance(y_train, pd.DataFrame) or (hasattr(y_train, 'shape') and len(y_train.shape) > 1 and y_train.shape[1] > 1):
-                    for idx, y_col in enumerate(y_train.columns):
-                        y_train_col = y_train[y_col]
-                        y_test_col = y_test[y_col]
-                        X_train_const = add_constant(X_train)
-                        X_test_const = add_constant(X_test)
-                        ols_model = OLS(y_train_col, X_train_const).fit()
-                        y_pred = ols_model.predict(X_test_const)
-                        errors = y_test_col - y_pred
-                        # ols_model_name is e.g. "TextOnly_Gaze" or "TextAttn_PCA"
-                        model_id = f"{ols_model_name}_{y_col}"
-                        per_sample_errors[model_id] = errors.values
-                        r2 = ols_model.rsquared
-                        n = len(y_test_col)
-                        p = X_test_const.shape[1] - 1
-                        r2_adj = 1 - (1 - r2) * (n - 1) / (n - p - 1)
-                        rmse = np.sqrt(np.mean((y_test_col - y_pred) ** 2))
-                        r2_dict[model_id] = r2
-                        model_performance.append({
-                            "task": task,
-                            "LLM_model": model_name,
-                            "attention_method": attn_method,
-                            "OLS_model": model_id,
-                            "rsquared": r2,
-                            "rsquared_adj": r2_adj,
-                            "rmse": rmse
-                        })
-                        for feat in X_train_const.columns:
-                            coef = ols_model.params[feat]
-                            tval = ols_model.tvalues[feat]
-                            stderr = ols_model.bse[feat]
-                            pval = ols_model.pvalues[feat]
-                            feat_vals = X_train_const[feat] if feat != "const" else np.ones(len(X_train_const))
-                            q25, q50, q75 = np.percentile(feat_vals, [25, 50, 75])
-                            feature_importance.append({
-                                "task": task,
-                                "LLM_model": model_name,
-                                "attention_method": attn_method,
-                                "OLS_model": model_id,
-                                "feature_name": feat,
-                                "coefficient": coef,
-                                "t": tval,
-                                "std_error": stderr,
-                                "p_value": pval,
-                                "q25": q25,
-                                "q50": q50,
-                                "q75": q75
-                            })
-                else:
-                    X_train_const = add_constant(X_train)
-                    X_test_const = add_constant(X_test)
-                    ols_model = OLS(y_train, X_train_const).fit()
-                    y_pred = ols_model.predict(X_test_const)
-                    errors = y_test - y_pred
-                    model_id = ols_model_name  # Should be "TextOnly_PCA" or similar
-                    per_sample_errors[model_id] = errors.values
-                    r2 = ols_model.rsquared
-                    n = len(y_test)
-                    p = X_test_const.shape[1] - 1
-                    r2_adj = 1 - (1 - r2) * (n - 1) / (n - p - 1)
-                    rmse = np.sqrt(np.mean((y_test - y_pred) ** 2))
-                    r2_dict[model_id] = r2
-                    model_performance.append({
-                        "task": task,
-                        "LLM_model": model_name,
-                        "attention_method": attn_method,
-                        "OLS_model": model_id,
-                        "rsquared": r2,
-                        "rsquared_adj": r2_adj,
-                        "rmse": rmse
-                    })
-                    for feat in X_train_const.columns:
-                        coef = ols_model.params[feat]
-                        tval = ols_model.tvalues[feat]
-                        stderr = ols_model.bse[feat]
-                        pval = ols_model.pvalues[feat]
-                        feat_vals = X_train_const[feat] if feat != "const" else np.ones(len(X_train_const))
-                        q25, q50, q75 = np.percentile(feat_vals, [25, 50, 75])
-                        feature_importance.append({
-                            "task": task,
-                            "LLM_model": model_name,
-                            "attention_method": attn_method,
-                            "OLS_model": model_id,
-                            "feature_name": feat,
-                            "coefficient": coef,
-                            "t": tval,
-                            "std_error": stderr,
-                            "p_value": pval,
-                            "q25": q25,
-                            "q50": q50,
-                            "q75": q75
-                        })
-
-            # --- Pairwise Wilcoxon test on per-sample RMSE ---
-            model_ids = list(per_sample_errors.keys())
-            for i, m1 in enumerate(model_ids):
-                for j, m2 in enumerate(model_ids):
-                    if i >= j:
-                        continue
-                    try:
-                        stat, p = wilcoxon(np.abs(per_sample_errors[m1]), np.abs(per_sample_errors[m2]))
-                    except Exception:
-                        stat, p = np.nan, np.nan
-                    for m_from, m_to in [(m1, m2), (m2, m1)]:
-                        idx = next((k for k, d in enumerate(model_performance)
-                                    if d["OLS_model"] == m_from), None)
-                        if idx is not None:
-                            key = f"wilcoxon_rmse_vs_{m_to}"
-                            model_performance[idx][key] = p
-
-            # --- Save Results ---
-            perf_df = pd.DataFrame(model_performance)
-            feat_df = pd.DataFrame(feature_importance)
-            results_dir = os.path.join(save_dir, "ols")
-            os.makedirs(results_dir, exist_ok=True)
-            perf_df.to_csv(os.path.join(results_dir, "model_performance.csv"), index=False)
-            feat_df.to_csv(os.path.join(results_dir, "feature_importance.csv"), index=False)
-            print(f"OLS results saved to: {results_dir}\n")
+# Save unified results
+results_df = pd.DataFrame(results)
+results_df.to_csv("outputs/ols_unified_performance.csv", index=False)
+print("Unified OLS results saved to outputs/ols_unified_performance.csv")
