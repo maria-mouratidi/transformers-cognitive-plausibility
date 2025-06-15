@@ -26,7 +26,7 @@ def load_llama(
     """
     # Setup device
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    device = "cpu"
+    # device = "cpu"
 
     model_class = AutoModelForCausalLM
 
@@ -45,8 +45,8 @@ def load_llama(
         cache_dir=cache_dir,
         torch_dtype=torch.float16,
         attn_implementation="eager",
-    ).to(device)
-        #device_map="auto", )# Automatically map to GPU if available
+    #).to(device)
+        device_map="auto", )# Automatically map to GPU if available
 
 
     

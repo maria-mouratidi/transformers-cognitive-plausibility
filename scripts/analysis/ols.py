@@ -69,38 +69,37 @@ def run_ols(X_train, X_test, y_train, y_test, predictors, meta):
         })
 
 for task in tasks:
-    text_df = pd.read_csv(f'materials/text_features_{task}.csv')
-    text_df['role'] = text_df['role'].map({'function': 0, 'content': 1})
-    X_text = text_df[['frequency', 'length', 'surprisal', 'role']]
-    gaze_df, _, _ = load_processed_data(attn_method="raw", task=task, model_name="llama")
-    y_gaze = gaze_df[FEATURES]
-    y_pca, _, _, _ = apply_pca(gaze_df, FEATURES, n_components=1)
-    # Split for baseline models
-    X_train_text, X_test_text, y_train_gaze, y_test_gaze, y_train_pca, y_test_pca = train_test_split(
-        X_text, y_gaze, y_pca, test_size=0.2, random_state=42
-    )
-    X_train_text_scaled, X_test_text_scaled = scale_text_features(X_train_text, X_test_text)
-    # 1. TextOnly Gaze (baseline)
-    for col in y_gaze.columns:
-        run_ols(
-            X_train_text_scaled, X_test_text_scaled, y_train_gaze[col], y_test_gaze[col],
-            predictors=list(X_train_text_scaled.columns),
-            meta={"task": task, "llm_model": "none", "attn_method": "none", "predictors": "text", "dependent": col}
-        )
-    # 2. TextOnly PCA (baseline 2)
-    run_ols(
-        X_train_text_scaled, X_test_text_scaled, y_train_pca, y_test_pca,
-        predictors=list(X_train_text_scaled.columns),
-        meta={"task": task, "llm_model": "none", "attn_method": "none", "predictors": "text", "dependent": "pca"}
-    )
-
     for model_name in llm_models:
+        text_df = pd.read_csv(f'materials/text_features_{task}_{model_name}.csv')
+        text_df['role'] = text_df['role'].map({'function': 0, 'content': 1})
+        X_text = text_df[['frequency', 'length', 'surprisal', 'role']]
+        gaze_df, _, _ = load_processed_data(attn_method="raw", task=task, model_name=model_name)
+        y_gaze = gaze_df[FEATURES]
+        y_pca, _, _, _ = apply_pca(gaze_df, FEATURES, n_components=1)
+        X_train_text, X_test_text, y_train_gaze, y_test_gaze, y_train_pca, y_test_pca = train_test_split(
+            X_text, y_gaze, y_pca, test_size=0.2, random_state=42
+        )
+        X_train_text_scaled, X_test_text_scaled = scale_text_features(X_train_text, X_test_text)
+
+        # TextOnly Gaze (baseline) for each model
+        for col in y_gaze.columns:
+            run_ols(
+                X_train_text_scaled, X_test_text_scaled, y_train_gaze[col], y_test_gaze[col],
+                predictors=list(X_train_text_scaled.columns),
+                meta={"task": task, "llm_model": model_name, "attn_method": "none", "predictors": "text", "dependent": col}
+            )
+        # TextOnly PCA (baseline) for each model
+        run_ols(
+            X_train_text_scaled, X_test_text_scaled, y_train_pca, y_test_pca,
+            predictors=list(X_train_text_scaled.columns),
+            meta={"task": task, "llm_model": model_name, "attn_method": "none", "predictors": "text", "dependent": "pca"}
+        )
+
         for attn_method in attn_methods:
             # if attn_method == "flow" and model_name == "bert" and task == "task2":
             #     continue
             gaze_df, attention_tensor, save_dir = load_processed_data(attn_method=attn_method, task=task, model_name=model_name)
-            if model_name == "bert" and attn_method == "flow":
-                print(f"Processing {task} with {model_name} and {attn_method} attention: shape: {attention_tensor.shape}")
+            print(f"Processing {task} with {model_name} and {attn_method} attention: {attention_tensor.shape}")
             y_gaze = gaze_df[FEATURES]
             y_pca, _, _, _ = apply_pca(gaze_df, FEATURES, n_components=1)
             X_attention, attn_names = get_attention_features(attention_tensor, gaze_df, model_name, attn_method)
@@ -122,13 +121,13 @@ for task in tasks:
                 run_ols(
                     X_train_attn_scaled, X_test_attn_scaled, y_train_gaze[col], y_test_gaze[col],
                     predictors=predictors,
-                    meta={"task": task, "llm_model": model_name, "attn_method": attn_method, "predictors": attn_method, "dependent": col}
+                    meta={"task": task, "llm_model": model_name, "attn_method": attn_method, "predictors": f"text+{attn_method}", "dependent": col}
                 )
             # 4/6/8. Attention PCA
             run_ols(
                 X_train_attn_scaled, X_test_attn_scaled, y_train_pca, y_test_pca,
                 predictors=predictors,
-                meta={"task": task, "llm_model": model_name, "attn_method": attn_method, "predictors": attn_method, "dependent": "pca"}
+                meta={"task": task, "llm_model": model_name, "attn_method": attn_method, "predictors": f"text+{attn_method}", "dependent": "pca"}
             )
 
 # Save unified results
