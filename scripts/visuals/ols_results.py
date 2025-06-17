@@ -57,13 +57,13 @@ def plot_attention_feature_importances(perf_path, llm_model, filename_prefix):
     df = df[
         (df["attn_method"].isin(["raw", "flow", "saliency"])) &
         (df["feature_name"] != "const") &
-        #(~df["feature_name"].isin(["attention_layer_1", "attention_layer_31"])) &
+        (~df["feature_name"].isin(["attention_layer_31"])) &
         (df["llm_model"] == llm_model)
     ]
     df["TargetType"] = df["dependent"].apply(lambda x: "Gaze" if x in FEATURES else ("PCA" if x == "pca" else "Other"))
     df["Model"] = df["attn_method"].apply(lambda x: f"text+{x}")
     df["feature_name"] = df["feature_name"].replace({"attention_layer_0": llm_model})
-
+    df["feature_name"] = df["feature_name"].replace({"attention_layer_1": llm_model})
     # Only keep Gaze and PCA targets
     df = df[df["TargetType"].isin(["Gaze", "PCA"])]
     df["abs_t"] = df["t"].abs()
@@ -82,14 +82,14 @@ def plot_attention_feature_importances(perf_path, llm_model, filename_prefix):
         hue_order=model_order,
         order=feature_order,
         dodge=True,
-        palette=CUSTOM_PALETTE[1:],  # Only 3 models
+        palette=CUSTOM_PALETTE[1:], 
         errorbar="sd"
     )
     g.set_axis_labels("Feature", "|t| value (avg. Gaze & PCA)")
     g.set_titles(col_template=f"Feature Importance ({llm_model.capitalize()}) - {{col_name}}")
     for ax in g.axes.flatten():
         plt.setp(ax.get_xticklabels(), rotation=45, ha='right')
-        
+        ax.set_ylim(bottom=0)
     g.add_legend(title="Model", loc='upper right')
     plt.tight_layout()
     plt.autoscale(enable=True, axis='y', tight=True)
