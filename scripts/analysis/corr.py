@@ -56,13 +56,10 @@ def pca_correlation_analysis(attention_nonpadded, pca_df):
         attention_values = attention_nonpadded[layer_idx]
         for pc_idx in range(pca_df.shape[1]):
             pc_values = pca_df.iloc[:, pc_idx]
-            pearson_r, pearson_p = pearsonr(attention_values, pc_values)
             spearman_r, spearman_p = spearmanr(attention_values, pc_values)
             results.append({
                 'layer': layer_idx,
                 'principal_component': pca_df.columns[pc_idx],
-                'pearson_r': pearson_r,
-                'pearson_p_value': pearson_p,
                 'spearman_r': spearman_r,
                 'spearman_p_value': spearman_p
             })
@@ -96,7 +93,7 @@ def run_full_analysis(model_name: str, attn_methods: list):
     # --- Combined Results ---
     combined_results = pd.concat(all_results, ignore_index=True)
     combined_pca_results = pd.concat(all_pca_results, ignore_index=True)
-    plot_corr(combined_results, combined_pca_results, attn_method=None, method='spearman', save_dir=f"outputs/combined_corrs_{model_name}.png", significance_threshold=0.05)
+    plot_corr(combined_results, combined_pca_results, model_name, save_dir="outputs", significance_threshold=0.05)
 
     # --- Feature Correlation Analysis ---
     all_FEATURES = FEATURES + ['SFD', 'GPT']  # Full feature list

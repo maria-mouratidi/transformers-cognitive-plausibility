@@ -4,10 +4,11 @@ import os
 import numpy as np
 import pandas as pd
 
-def plot_corr(results_df, pca_results_df, attn_method, method='spearman', save_dir=None, significance_threshold=0.05):
+def plot_corr(results_df, pca_results_df, model_name, save_dir=None, significance_threshold=0.05):
     """
     Plot a heatmap combining feature and PCA component correlations.
     """
+    method = 'spearman'  # or 'pearson', depending on your analysis
     results_df = results_df.copy()
     results_df['type'] = 'Feature'
     results_df = results_df.rename(columns={'feature': 'name'})
@@ -17,62 +18,46 @@ def plot_corr(results_df, pca_results_df, attn_method, method='spearman', save_d
     combined = pd.concat([results_df, pca_results_df], ignore_index=True)
 
     # Exclude 'raw' attention method from combined heatmap
-    if 'attn_method' in combined.columns:
-        combined = combined[combined['attn_method'] != 'raw']
+    flow_saliency_results_df = combined[combined['attn_method'] != 'raw']
 
-        # MultiIndex: (attn_method, layer)
-        combined['attn_layer'] = list(zip(combined['attn_method'], combined['layer']))
-        pivot = combined.pivot(index=['task', 'attn_method', 'layer'], columns='name', values=f'{method}_r')
-        pvals = combined.pivot(index=['task', 'attn_method', 'layer'], columns='name', values=f'{method}_p_value')
+    # MultiIndex: (attn_method, task)
+    flow_saliency_results_df['attn_layer'] = list(flow_saliency_results_df['attn_method'])
+    pivot = flow_saliency_results_df.pivot(index=['task', 'attn_method'], columns='name', values=f'{method}_r')
+    pvals = flow_saliency_results_df.pivot(index=['task', 'attn_method'], columns='name', values=f'{method}_p_value')
+    mask = pvals >= significance_threshold
+
+    plt.figure(figsize=(16, max(8, len(pivot))))
+    sns.heatmap(pivot, mask=mask, annot=True, fmt=".2f", cmap="coolwarm", center=0, cbar_kws={'label': f'{method.title()} r'})
+    plt.title(f"Model vs Eye-Gaze Correlations (p<{significance_threshold})")
+    plt.xlabel('Eye-Gaze')
+    plt.ylabel('Probing Method & Task')
+    plt.tight_layout()
+    if save_dir:
+        plt.savefig(os.path.join(save_dir, f"combined_corrs_{model_name}.png"))
+        plt.close()
+
+    #col = 'principal_component' if pca else 'feature'
+    for task in ['task2', 'task3']:
+        raw_results_df = combined[(combined['attn_method'] == 'raw') & (combined['task'] == task)]
+        pivot = raw_results_df.pivot(index='layer', columns='name', values=f'{method}_r')
+        pvals = raw_results_df.pivot(index='layer', columns='name', values=f'{method}_p_value')
+
+        # Create mask for non-significant p-values
         mask = pvals >= significance_threshold
 
-        plt.figure(figsize=(16, max(8, len(pivot))))
+        plt.figure(figsize=(12, 8))
         sns.heatmap(pivot, mask=mask, annot=True, fmt=".2f", cmap="coolwarm", center=0, cbar_kws={'label': f'{method.title()} r'})
-        plt.title(f"Model vs Eye-Gaze Correlations (Features & PCA, {method.title()}, p<{significance_threshold})")
-        plt.xlabel('Eye-Gaze Features & Principal Components')
-        plt.ylabel('Attention Method / Layer')
-        plt.tight_layout()
-        if save_dir:
-            os.makedirs(save_dir, exist_ok=True)
-            plt.savefig(save_dir)
-            plt.close()
-    else:
-        # Add a column to distinguish features and PCs
-        results_df = results_df.copy()
-        results_df['type'] = 'Feature'
-        results_df = results_df.rename(columns={'feature': 'name'})
-        pca_results_df = pca_results_df.copy()
-        pca_results_df['type'] = 'PC'
-        pca_results_df = pca_results_df.rename(columns={'principal_component': 'name'})
-
-        # Combine
-        combined = pd.concat([results_df, pca_results_df], ignore_index=True)
-
-        # Pivot for heatmap
-        pivot = combined.pivot(index='layer', columns='name', values=f'{method}_r')
-        pvals = combined.pivot(index='layer', columns='name', values=f'{method}_p_value')
-        mask = pvals >= significance_threshold
-
-        # Reorder columns: PCA components first, then features
-        pc_names = pca_results_df['name'].unique().tolist()
-        feature_names = results_df['name'].unique().tolist()
-        ordered_columns = pc_names + [col for col in pivot.columns if col not in pc_names]
-        pivot = pivot[ordered_columns]
-        mask = mask[ordered_columns]
-
-        plt.figure(figsize=(16, 8))
-        sns.heatmap(pivot, mask=mask, annot=True, fmt=".2f", cmap="coolwarm", center=0, cbar_kws={'label': f'{method.title()} r'})
-        num_cols = len(pivot.columns)
-        num_rows = len(pivot.index)
-        plt.title(f"Model vs Eye-Gaze Correlations (Features & PCA, {method.title()}, p<{significance_threshold})")
-        plt.xlabel('Eye-Gaze Features & Principal Components')
-        plt.ylabel('Layer Attention' if attn_method == "raw" else 'Attention Flow' if attn_method == "flow" else 'Gradient Saliency')
+        plt.title(f"Model vs Eye-Gaze Correlations ({method.title()}, p<{significance_threshold})")
+        plt.xlabel('Eye-Gaze Features')
+        plt.ylabel('Layer Attention')
         plt.tight_layout()
 
         if save_dir:
             os.makedirs(save_dir, exist_ok=True)
-            plt.savefig(save_dir)
+            plt.savefig(os.path.join(save_dir, f"raw_corrs_{task}_{model_name}.png"))
             plt.close()
+
+
 
 def plot_gaze_intercorr(human_df, pca_df, features, save_dir=None):
     """
