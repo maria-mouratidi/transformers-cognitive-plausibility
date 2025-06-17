@@ -5,8 +5,7 @@ from scipy.stats import pearsonr, spearmanr
 import torch
 from sklearn.decomposition import PCA
 from scripts.analysis.load_attention import load_processed_data
-from scripts.visuals.corr_plots import plot_regplots, plot_combined_corr, plot_feature_intercorr
-from scripts.visuals.pca_plots import plot_explained_variance, plot_pca_loadings
+from scripts.visuals.corr_plots import plot_corr, plot_gaze_intercorr
 import matplotlib.pyplot as plt
 import seaborn as sns
 
@@ -16,7 +15,7 @@ def map_token_indices(human_df):
     token_indices = [(row['Sent_ID'], row['Word_ID']) for _, row in human_df.iterrows()]
     return token_indices
 
-def feature_correlation_analysis(attention_nonpadded, human_df):
+def correlation_analysis(attention_nonpadded, human_df):
     feature_matrix = human_df[FEATURES].to_numpy()
     results = []
     num_layers = attention_nonpadded.shape[0]
@@ -69,72 +68,40 @@ def pca_correlation_analysis(attention_nonpadded, pca_df):
             })
     return pd.DataFrame(results)
 
-def plot_feature_pca_intercorr(human_df, pca_df, features, save_dir=None):
-    """
-    Plot heatmap of inter-correlations among gaze features and PCA components.
-    """
-    combined = pd.concat([human_df[features], pca_df], axis=1)
-    corr_matrix = combined.corr(method='pearson')
-    plt.figure(figsize=(10, 8))
-    sns.heatmap(corr_matrix, annot=True, cmap="vlag", center=0)
-    plt.title("Inter-correlations: Eye-gaze Features & PCA Components")
-    plt.tight_layout()
-    if save_dir:
-        save_path = os.path.join(save_dir, f'feature_pca_intercorr_heatmap.png')
-        plt.savefig(save_path)
-        print(f"Saved inter-correlation heatmap to {save_path}")
-
-def run_full_analysis(attn_method: str, task: str, model_name: str, variance_threshold=0.95):
-    human_df, attention, save_dir = load_processed_data(attn_method=attn_method, task=task, model_name=model_name)
-    os.makedirs(save_dir, exist_ok=True)
-    print(f"Attention shape: {attention.shape}")
-
-    token_indices = map_token_indices(human_df)
-    sent_ids, word_ids = zip(*token_indices)
-    sent_ids = torch.tensor(sent_ids, dtype=torch.long)
-    word_ids = torch.tensor(word_ids, dtype=torch.long)
-    attention_nonpadded = attention[:, sent_ids, word_ids].numpy()
-    print(f"Attention non-padded shape: {attention_nonpadded.shape}")
-
-    # --- Exploratory Analysis ---
-    if model_name == "llama" and attn_method == "raw":
-        layers_to_analyze = [0, 1, 31]
-    elif model_name == "bert" and attn_method == "raw":
-        layers_to_analyze = [0, 4, 11]
-    else:
-        layers_to_analyze = []
-
-    for layer_idx in layers_to_analyze:
-        plot_regplots(human_df, attention_nonpadded[layer_idx, :], FEATURES, layer_idx, attn_method, save_dir)
+def run_full_analysis(model_name: str, attn_methods: list):
+    all_results = []
+    all_pca_results = []
+    for task in tasks:
+        for attn_method in attn_methods:
+            human_df, attention, save_dir = load_processed_data(attn_method=attn_method, task=task, model_name=model_name)
+            
+            # Match attention to human_df
+            token_indices = map_token_indices(human_df)
+            sent_ids, word_ids = zip(*token_indices)
+            sent_ids = torch.tensor(sent_ids, dtype=torch.long)
+            word_ids = torch.tensor(word_ids, dtype=torch.long)
+            attention_nonpadded = attention[:, sent_ids, word_ids].numpy()
+            
+            # --- Correlation Analysis ---
+            results_df = correlation_analysis(attention_nonpadded, human_df)
+            pca_df, _, _, _ = apply_pca(human_df, FEATURES, n_components=1) # 1 component is sufficient according to PCA-gaze correlations
+            pca_results_df = pca_correlation_analysis(attention_nonpadded, pca_df)
+            results_df['attn_method'] = attn_method
+            pca_results_df['attn_method'] = attn_method
+            results_df['task'] = task
+            pca_results_df['task'] = task
+            all_results.append(results_df)
+            all_pca_results.append(pca_results_df)
+    
+    # --- Combined Results ---
+    combined_results = pd.concat(all_results, ignore_index=True)
+    combined_pca_results = pd.concat(all_pca_results, ignore_index=True)
+    plot_corr(combined_results, combined_pca_results, attn_method=None, method='spearman', save_dir=f"outputs/combined_corrs_{model_name}.png", significance_threshold=0.05)
 
     # --- Feature Correlation Analysis ---
-    results_df = feature_correlation_analysis(attention_nonpadded, human_df)
-    results_df.to_csv(f"{save_dir}/feature_correlations.csv", index=False)
-
-    # --- PCA Correlation Analysis ---
-    pca_df, pca, explained_variance, cumulative_variance = apply_pca(human_df, FEATURES, n_components=1)
-    pca_results_df = pca_correlation_analysis(attention_nonpadded, pca_df)
-    pca_results_df.to_csv(f"{save_dir}/pca_correlations.csv", index=False)
-
-    # --- Combined Plot ---
-    plot_combined_corr(results_df, pca_results_df, attn_method, method='spearman', save_dir=save_dir, significance_threshold=0.05)
-
-    # --- Save significant correlations ---
-    significance_threshold = 0.05
-    sig = results_df[
-        (results_df['pearson_p_value'] < significance_threshold) &
-        (results_df['spearman_p_value'] < significance_threshold)
-    ]
-    sig.to_csv(f"{save_dir}/significant_feature_correlations.csv", index=False)
-    sig_pca = pca_results_df[
-        (pca_results_df['spearman_p_value'] < significance_threshold)
-    ]
-    sig_pca.to_csv(f"{save_dir}/significant_pca_correlations.csv", index=False)
-
-    # --- Optional: Plot PCA explained variance and loadings ---
-    plot_explained_variance(cumulative_variance, save_dir=save_dir)
-    plot_pca_loadings(pca, FEATURES, save_dir=save_dir)
-    plot_feature_intercorr(human_df, pca_df, FEATURES, save_dir=save_dir)
+    all_FEATURES = FEATURES + ['SFD', 'GPT']  # Full feature list
+    pca_df, _, _, _ = apply_pca(human_df, all_FEATURES, variance_threshold=0.95)
+    plot_gaze_intercorr(human_df, pca_df, all_FEATURES, save_dir="outputs") # Plot all features for exploration
 
 if __name__ == "__main__":
     llm_models = ["llama", "bert"]
@@ -142,6 +109,5 @@ if __name__ == "__main__":
     attn_methods = ["raw", "flow", "saliency"]
 
     for model_name in llm_models:
-        for task in tasks:
-            for attn_method in attn_methods:
-                run_full_analysis(attn_method=attn_method, task=task, model_name=model_name, variance_threshold=0.95)
+        print(f"--- Combined analysis for {model_name} (excluding raw) ---")
+        run_full_analysis(model_name=model_name, attn_methods=attn_methods)

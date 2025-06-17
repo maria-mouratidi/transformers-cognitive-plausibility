@@ -1,9 +1,14 @@
 # Ignore data directories
-/data/
-!/data/task2/processed
-!/data/task3/processed
-/results/
-/outputs/
+data/task2/*
+data/task3/*
+!/data/task2/processed/**
+!/data/task3/processed/**
+
+outputs/raw/task2/llama/attention_data.pt
+outputs/raw/task2/bert/attention_data.pt
+outputs/raw/task3/bert/attention_data.pt
+outputs/raw/task3/llama/attention_data.pt
+outputs/flow_legacy
 
 # Python
 *.pyc
@@ -36,7 +41,6 @@ Thumbs.db
 # Models
 *.h5
 *.ckpt
-*.pt
 
 # SLURM
 *.sbatch
