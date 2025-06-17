@@ -20,7 +20,10 @@ def preprocess_perf_df(perf_path):
     df["attention_method"] = df["attn_method"]
     return df[df["ModelType"].isin(["Attention", "TextOnly"])]
 
-def plot_metric(plot_df, metric, filename):
+CUSTOM_PALETTE = ['#1f78b4', '#33a02c', '#e31a1c', '#ff7f00']
+
+
+def plot_metric(plot_df, metric, llm_model, filename):
     plot_df = plot_df.copy()
     plot_df["bar_type"] = plot_df.apply(
         lambda row: "text only" if row["ModelType"] == "TextOnly" else f"text+{row['attention_method']}", axis=1
@@ -38,23 +41,23 @@ def plot_metric(plot_df, metric, filename):
     plt.figure(figsize=(12, 6))
     ax = sns.barplot(
         data=plot_df, x="x_label", y=metric, hue="bar_type",
-        order=x_order, hue_order=hue_order, errorbar="sd"
+        order=x_order, hue_order=hue_order, errorbar="sd", palette=CUSTOM_PALETTE
     )
-    ax.set_xlabel("Target & Task")
-    ax.set_ylabel(f"{metric.capitalize()}")
-    ax.set_title("Ordinary Least Squares Models")
-    ax.set_ylim(top=0.5)
-    ax.legend(title="Models")
+    ax.set_xlabel("Model Target & Reading Task")
+    ax.set_ylabel(r"$R^2$ adjusted" if metric == "rsquared_adj" else f"{metric.capitalize()}")
+    ax.set_title(f"Ordinary Least Squares Performance ({llm_model.capitalize()})")
+    ax.set_ylim(top=0.6)
+    ax.legend(title="Model", loc='upper right')
     plt.tight_layout()
     plt.savefig(filename)
     plt.close()
 
-def plot_attention_feature_importances(perf_path, filename_prefix, llm_model):
+def plot_attention_feature_importances(perf_path, llm_model, filename_prefix):
     df = pd.read_csv(perf_path)
     df = df[
         (df["attn_method"].isin(["raw", "flow", "saliency"])) &
         (df["feature_name"] != "const") &
-        (~df["feature_name"].isin(["attention_layer_1", "attention_layer_31"])) &
+        #(~df["feature_name"].isin(["attention_layer_1", "attention_layer_31"])) &
         (df["llm_model"] == llm_model)
     ]
     df["TargetType"] = df["dependent"].apply(lambda x: "Gaze" if x in FEATURES else ("PCA" if x == "pca" else "Other"))
@@ -79,15 +82,17 @@ def plot_attention_feature_importances(perf_path, filename_prefix, llm_model):
         hue_order=model_order,
         order=feature_order,
         dodge=True,
-        palette="Set2",
+        palette=CUSTOM_PALETTE[1:],  # Only 3 models
         errorbar="sd"
     )
-    g.set_axis_labels("Model Feature", "Mean |t| value (feature importance, avg. Gaze & PCA)")
-    g.set_titles(col_template="Task: {col_name}")
+    g.set_axis_labels("Feature", "|t| value (avg. Gaze & PCA)")
+    g.set_titles(col_template=f"Feature Importance ({llm_model.capitalize()}) - {{col_name}}")
     for ax in g.axes.flatten():
         plt.setp(ax.get_xticklabels(), rotation=45, ha='right')
-    g.add_legend(title="Model")
+        
+    g.add_legend(title="Model", loc='upper right')
     plt.tight_layout()
+    plt.autoscale(enable=True, axis='y', tight=True)
     plt.savefig(f"{filename_prefix}_{llm_model}.png")
     plt.close()
 
@@ -95,12 +100,6 @@ def plot_attention_feature_importances(perf_path, filename_prefix, llm_model):
 perf_path = "outputs/ols_unified_performance.csv"
 plot_df = preprocess_perf_df(perf_path)
 
-# Plot metrics for llama and bert
-plot_metric(plot_df[plot_df["llm_model"] != "bert"], "rsquared", "outputs/ols_barplot_r2_llama.png")
-bert_df = plot_df[plot_df["llm_model"] == "bert"]
-if not bert_df.empty:
-    plot_metric(bert_df, "rsquared", "outputs/ols_barplot_r2_bert.png")
-
-# Plot averaged feature importances for both models
-for model in ["llama", "bert"]:
-    plot_attention_feature_importances(perf_path, "outputs/ols_attention_feature_importances", model)
+for model_name in ["llama", "bert"]:
+    plot_metric(plot_df[plot_df["llm_model"] == model_name], "rsquared_adj", model_name, f"outputs/ols_barplot_r2_{model_name}.png")
+    plot_attention_feature_importances(perf_path, model_name, "outputs/ols_attention_feature_importances")

@@ -94,18 +94,18 @@ if __name__ == "__main__":
     prompt_len = raw_data['prompt_len']
     num_sentences = attn.shape[1]
     flow_dir = f"/scratch/7982399/thesis/outputs/flow/{task}/{model_name}"
-    # os.makedirs(flow_dir, exist_ok=True)
+    # # os.makedirs(flow_dir, exist_ok=True)
 
-    all_flows = []
-    for batch in tqdm(range(num_sentences), desc="Processing Batches"):
-        result = calculate_encoder_flow(attention_tensor=attn, batch=batch)
-        all_flows.append(result)
+    # all_flows = []
+    # for batch in tqdm(range(num_sentences), desc="Processing Batches"):
+    #     result = calculate_encoder_flow(attention_tensor=attn, batch=batch)
+    #     all_flows.append(result)
 
-    stacked_results = torch.cat(all_flows, dim=0)
-    torch.save(stacked_results, os.path.join(flow_dir, "attention_flow.pt"))
+    # stacked_results = torch.cat(all_flows, dim=0)
+    # torch.save(stacked_results, os.path.join(flow_dir, "attention_flow.pt"))
     
     attention_flow = torch.load(os.path.join(flow_dir, "attention_flow.pt"))
-    flow_processed = process_attention_flow(attention_flow, [word_mappings[0]], prompt_len=prompt_len, reduction="max")
+    flow_processed = process_attention_flow(attention_flow, word_mappings, prompt_len=prompt_len, reduction="max")
     torch.save(flow_processed, os.path.join(flow_dir, "attention_flow_processed.pt"))
     attention_flow_processed = torch.load(os.path.join(flow_dir, "attention_flow_processed.pt"))
     
