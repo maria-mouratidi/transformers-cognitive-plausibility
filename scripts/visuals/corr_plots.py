@@ -7,13 +7,12 @@ palette = "RdBu_r"  #diverging color palette
 
 def set_academic_rcparams():
     plt.rcParams.update({
-        'font.size': 12,
-        'axes.labelsize': 12,
-        'axes.titlesize': 12,
-        'xtick.labelsize': 10,
-        'ytick.labelsize': 10,
-        'legend.fontsize': 8,
-        'figure.titlesize': 12,
+        'font.size': 18,
+        'axes.labelsize': 20,
+        'axes.titlesize': 18,
+        'xtick.labelsize': 16,
+        'ytick.labelsize': 16,
+        'legend.fontsize': 16,
         'font.family': 'serif',
         'font.serif': ['Times New Roman', 'DejaVu Serif', 'serif']
     })
@@ -51,10 +50,9 @@ def plot_corr(results_df, pca_results_df, model_name, save_dir=None, significanc
     pivot = reorder_columns_pc1_first(pivot)
     pvals = reorder_columns_pc1_first(pvals)
 
-    # First plot: Combined correlations
-    plt.figure(figsize=(7, 3.5))
+    plt.figure(figsize=(8, 4))
     sns.heatmap(pivot, mask=mask, annot=True, fmt=".2f", center=0, 
-                cmap=palette, cbar_kws={'label': f'{method.title()} r', 'shrink': 0.8},
+                cmap=palette, cbar_kws={'label': f'{method.title()} r', 'shrink': 0.7, 'aspect': 20, 'pad': 0.02},
                 linewidths=0.5, linecolor='white')
     plt.xlabel('')
     plt.ylabel('')
@@ -91,9 +89,9 @@ def plot_corr(results_df, pca_results_df, model_name, save_dir=None, significanc
     
     # Create side-by-side plot
     if model_name == 'llama':
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 12))  # More compact
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 18))  
     else:
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 8))
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 12))
     
     # Task2 heatmap (left)
     sns.heatmap(pivot_task2, mask=mask_task2, annot=True, fmt=".2f", 
@@ -115,7 +113,7 @@ def plot_corr(results_df, pca_results_df, model_name, save_dir=None, significanc
     
     # Add shared colorbar
     cbar = fig.colorbar(im.collections[0], ax=[ax1, ax2], shrink=0.7, aspect=20, pad=0.02)
-    cbar.set_label(f'{method.title()} r', rotation=270, labelpad=15)
+    cbar.set_label(f'{method.title()} r', labelpad=20)
     
     if save_dir:
         os.makedirs(save_dir, exist_ok=True)
@@ -132,7 +130,7 @@ def plot_gaze_intercorr(human_df, pca_df, features, save_dir=None):
     combined = pd.concat([human_df[features], pca_df], axis=1)
     combined = combined.rename(columns={'meanPupilSize': 'mPS', 'nFixations': 'F'})
     corr_matrix = combined.corr(method='spearman')
-    plt.figure(figsize=(10, 8))
+    plt.figure(figsize=(8, 6))
     sns.heatmap(corr_matrix, annot=True, center=0, cmap=palette)
     plt.yticks(rotation=0)
     plt.tight_layout()

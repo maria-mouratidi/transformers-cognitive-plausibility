@@ -75,7 +75,7 @@ def plot_attention_feature_importances(perf_path, llm_model, filename_prefix):
     model_order = [f"text+raw", f"text+flow", f"text+saliency"]
 
     g = sns.FacetGrid(
-        df, col="task", sharey=True, height=5, aspect=1.2
+        df, col="task", sharey=True, height=6, aspect=2  # Changed to match 12x6
     )
     g.map_dataframe(
         sns.barplot,
