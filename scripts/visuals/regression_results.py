@@ -2,6 +2,7 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 from scripts.analysis.correlation import FEATURES
+from scripts.visuals.corr_plots import set_academic_rcparams
 
 def get_model_type(row):
     if row["predictors"] == "text_only":
@@ -24,6 +25,7 @@ CUSTOM_PALETTE = ['#1f78b4', '#33a02c', '#e31a1c', '#ff7f00']
 
 
 def plot_metric(plot_df, metric, llm_model, filename):
+    set_academic_rcparams()
     plot_df = plot_df.copy()
     plot_df["bar_type"] = plot_df.apply(
         lambda row: "text only" if row["ModelType"] == "TextOnly" else f"text+{row['attention_method']}", axis=1
@@ -43,16 +45,17 @@ def plot_metric(plot_df, metric, llm_model, filename):
         data=plot_df, x="x_label", y=metric, hue="bar_type",
         order=x_order, hue_order=hue_order, errorbar="sd", palette=CUSTOM_PALETTE
     )
-    ax.set_xlabel("Model Target & Reading Task")
+    # Remove x-axis label
+    ax.set_xlabel("")
     ax.set_ylabel(r"$R^2$ adjusted" if metric == "rsquared_adj" else f"{metric.capitalize()}")
-    ax.set_title(f"Ordinary Least Squares Performance ({llm_model.capitalize()})")
     ax.set_ylim(top=0.6)
     ax.legend(title="Model", loc='upper right')
     plt.tight_layout()
-    plt.savefig(filename)
+    plt.savefig(filename, dpi=600, bbox_inches='tight', format='pdf')
     plt.close()
 
 def plot_attention_feature_importances(perf_path, llm_model, filename_prefix):
+    set_academic_rcparams()
     df = pd.read_csv(perf_path)
     df = df[
         (df["attn_method"].isin(["raw", "flow", "saliency"])) &
@@ -62,13 +65,13 @@ def plot_attention_feature_importances(perf_path, llm_model, filename_prefix):
     ]
     df["TargetType"] = df["dependent"].apply(lambda x: "Gaze" if x in FEATURES else ("PCA" if x == "pca" else "Other"))
     df["Model"] = df["attn_method"].apply(lambda x: f"text+{x}")
-    df["feature_name"] = df["feature_name"].replace({"attention_layer_0": llm_model})
-    df["feature_name"] = df["feature_name"].replace({"attention_layer_1": llm_model})
+    df["feature_name"] = df["feature_name"].replace({"attention_layer_0": "attention"})
+    df["feature_name"] = df["feature_name"].replace({"attention_layer_1": "attention"})
     # Only keep Gaze and PCA targets
     df = df[df["TargetType"].isin(["Gaze", "PCA"])]
     df["abs_t"] = df["t"].abs()
 
-    feature_order = [llm_model] + sorted([f for f in df["feature_name"].unique() if f != llm_model])
+    feature_order = sorted([f for f in df["feature_name"].unique() if f != llm_model])
     model_order = [f"text+raw", f"text+flow", f"text+saliency"]
 
     g = sns.FacetGrid(
@@ -85,15 +88,16 @@ def plot_attention_feature_importances(perf_path, llm_model, filename_prefix):
         palette=CUSTOM_PALETTE[1:], 
         errorbar="sd"
     )
-    g.set_axis_labels("Feature", "|t| value (avg. Gaze & PCA)")
-    g.set_titles(col_template=f"Feature Importance ({llm_model.capitalize()}) - {{col_name}}")
-    for ax in g.axes.flatten():
-        plt.setp(ax.get_xticklabels(), rotation=45, ha='right')
+    g.set_axis_labels("", "|t| value (avg. Gaze & PCA)")
+    for ax, title in zip(g.axes.flatten(), g.col_names):
+        ax.set_title(f"Task {title[-1]}", fontweight='bold')
+        #plt.setp(ax.get_xticklabels(), rotation=45, ha='right')
         ax.set_ylim(bottom=0)
+        
     g.add_legend(title="Model", loc='upper right')
     plt.tight_layout()
     plt.autoscale(enable=True, axis='y', tight=True)
-    plt.savefig(f"{filename_prefix}_{llm_model}.png")
+    plt.savefig(f"{filename_prefix}_{llm_model}.pdf", dpi=600, bbox_inches='tight', format='pdf')
     plt.close()
 
 # --- MAIN EXECUTION ---
@@ -101,5 +105,5 @@ perf_path = "outputs/ols_unified_performance.csv"
 plot_df = preprocess_perf_df(perf_path)
 
 for model_name in ["llama", "bert"]:
-    plot_metric(plot_df[plot_df["llm_model"] == model_name], "rsquared_adj", model_name, f"outputs/ols_barplot_r2_{model_name}.png")
+    plot_metric(plot_df[plot_df["llm_model"] == model_name], "rsquared_adj", model_name, f"outputs/ols_barplot_r2_{model_name}.pdf")
     plot_attention_feature_importances(perf_path, model_name, "outputs/ols_attention_feature_importances")

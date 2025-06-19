@@ -3,215 +3,135 @@ warnings.filterwarnings("ignore")
 import pandas as pd
 import os
 import numpy as np
+from statsmodels.api import OLS, add_constant
 from sklearn.model_selection import train_test_split
-from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_squared_error
-from sklearn.preprocessing import FunctionTransformer
-from scipy.stats import ttest_rel, wilcoxon
+from sklearn.preprocessing import StandardScaler
 from scripts.analysis.correlation import load_processed_data, map_token_indices
 from scripts.analysis.correlation_pca import apply_pca
-from ..visuals.added_var_plot import partial_reg_plot
-from scripts.analysis.perm_feat_imp import compute_permutation_importance
+from scripts.analysis.correlation import FEATURES
 
-# ------------------ Load and Prepare Data ------------------
+# ------------------ Configurations ------------------
+llm_models = ["llama", "bert"]
+tasks = ["task2", "task3"]
+attn_methods = ["raw", "flow", "saliency"]
+predictor_types = ["text", "raw", "flow", "saliency"]
+dependent_types = ["gaze", "pca"]
 
-attn_method, task, model_name = "raw", "task3", "bert"
-text_df = pd.read_csv(f'materials/text_features_{task}.csv')
-text_df['role'] = text_df['role'].map({'function': 0, 'content': 1})
-gaze_df, attention_tensor, save_dir  = load_processed_data(attn_method=attn_method, task=task, model_name=model_name)
+results = []
 
-X_text = text_df[['frequency', 'length', 'surprisal', 'role']]
-gaze_features = ['nFixations', 'meanPupilSize', 'GD', 'TRT', 'FFD', 'SFD', 'GPT']
-y_gaze = gaze_df[gaze_features]
+def get_attention_features(attention_tensor, gaze_df, model_name, attn_method):
+    sent_idx, word_idx = zip(*map_token_indices(gaze_df))
+    sent_idx = np.array(sent_idx)
+    word_idx = np.array(word_idx)
+    if attn_method == "raw" and model_name == "llama":
+        selected_layers = [1, 31]
+    else:
+        selected_layers = [0]
+    features = []
+    for layer in selected_layers:
+        features.append(attention_tensor[layer, sent_idx, word_idx])
+    X_attention = np.column_stack(features)
+    attn_names = [f"attention_layer_{i}" for i in selected_layers]
+    return X_attention, attn_names
 
-y_pca, pca_obj, explained_var, cum_var = apply_pca(gaze_df, gaze_features)
+def scale_text_features(X_train, X_test):
+    scaler = StandardScaler()
+    cols = ['frequency', 'length', 'surprisal']
+    X_train_scaled = X_train.copy()
+    X_test_scaled = X_test.copy()
+    X_train_scaled[cols] = scaler.fit_transform(X_train[cols])
+    X_test_scaled[cols] = scaler.transform(X_test[cols])
+    return X_train_scaled, X_test_scaled
 
-# ------------------ Attention Features ------------------
-sent_idx, word_idx = zip(*map_token_indices(gaze_df))
-sent_idx = np.array(sent_idx)
-word_idx = np.array(word_idx)
+def run_ols(X_train, X_test, y_train, y_test, predictors, meta):
+    X_train_const = add_constant(X_train)
+    X_test_const = add_constant(X_test)
+    ols_model = OLS(y_train, X_train_const).fit()
+    y_pred = ols_model.predict(X_test_const)
+    r2 = ols_model.rsquared
+    n = len(y_test)
+    p = X_test_const.shape[1] - 1
+    r2_adj = 1 - (1 - r2) * (n - 1) / (n - p - 1)
+    rmse = np.sqrt(np.mean((y_test - y_pred) ** 2))
+    for feat in X_train_const.columns:
+        results.append({
+            **meta,
+            "predictors": "text_only" if meta["predictors"] == "text" else f"text+{meta['attn_method']}",
+            "dependent": meta["dependent"],
+            "feature_name": feat,
+            "coefficient": ols_model.params[feat],
+            "t": ols_model.tvalues[feat],
+            "std_error": ols_model.bse[feat],
+            "p_value": ols_model.pvalues[feat],
+            "rsquared": r2,
+            "rsquared_adj": r2_adj,
+            "rmse": rmse
+        })
 
-selected_layers = [1, 31] if (model_name == "llama" and attn_method == "raw") else [0] #bert, flow and saliency use layer 0
-attention_features = []
-for layer in selected_layers:
-    layer_attention = attention_tensor[layer, sent_idx, word_idx]
-    attention_features.append(layer_attention)
+for task in tasks:
+    for model_name in llm_models:
+        #text_df = pd.read_csv(f'materials/text_features_{task}_{model_name}.csv')
+        text_df = pd.read_csv(f'materials/text_features_{task}_llama.csv')
+        text_df['role'] = text_df['role'].map({'function': 0, 'content': 1})
+        X_text = text_df[['frequency', 'length', 'surprisal', 'role']]
+        gaze_df, _, _ = load_processed_data(attn_method="raw", task=task, model_name=model_name)
+        y_gaze = gaze_df[FEATURES]
+        y_pca, _, _, _ = apply_pca(gaze_df, FEATURES, n_components=1)
+        X_train_text, X_test_text, y_train_gaze, y_test_gaze, y_train_pca, y_test_pca = train_test_split(
+            X_text, y_gaze, y_pca, test_size=0.2, random_state=42
+        )
+        X_train_text_scaled, X_test_text_scaled = scale_text_features(X_train_text, X_test_text)
 
-X_attention = np.column_stack(attention_features)
-attention_feature_names = [f'attention_layer_{i}' for i in selected_layers]
+        # TextOnly Gaze (baseline) for each model
+        for col in y_gaze.columns:
+            run_ols(
+                X_train_text_scaled, X_test_text_scaled, y_train_gaze[col], y_test_gaze[col],
+                predictors=list(X_train_text_scaled.columns),
+                meta={"task": task, "llm_model": model_name, "attn_method": "none", "predictors": "text", "dependent": col}
+            )
+        # TextOnly PCA (baseline) for each model
+        run_ols(
+            X_train_text_scaled, X_test_text_scaled, y_train_pca, y_test_pca,
+            predictors=list(X_train_text_scaled.columns),
+            meta={"task": task, "llm_model": model_name, "attn_method": "none", "predictors": "text", "dependent": "pca"}
+        )
 
-X_text_attn = X_text.copy()
-for idx, name in enumerate(attention_feature_names):
-    X_text_attn[name] = X_attention[:, idx]
+        for attn_method in attn_methods:
+            # if attn_method == "flow" and model_name == "bert" and task == "task2":
+            #     continue
+            gaze_df, attention_tensor, save_dir = load_processed_data(attn_method=attn_method, task=task, model_name=model_name)
+            print(f"Processing {task} with {model_name} and {attn_method} attention: {attention_tensor.shape}")
+            y_gaze = gaze_df[FEATURES]
+            y_pca, _, _, _ = apply_pca(gaze_df, FEATURES, n_components=1)
+            X_attention, attn_names = get_attention_features(attention_tensor, gaze_df, model_name, attn_method)
+            X_text_attn = X_text.copy()
+            for idx, name in enumerate(attn_names):
+                X_text_attn[name] = X_attention[:, idx]
+            # Split
+            X_train_attn, X_test_attn, y_train_gaze, y_test_gaze, y_train_pca, y_test_pca = train_test_split(
+                X_text_attn, y_gaze, y_pca, test_size=0.2, random_state=42
+            )
+            X_train_attn_scaled, X_test_attn_scaled = scale_text_features(X_train_attn, X_test_attn)
+            # Add attention columns (do not scale)
+            for name in attn_names:
+                X_train_attn_scaled[name] = X_train_attn[name].values
+                X_test_attn_scaled[name] = X_test_attn[name].values
+            predictors = list(X_train_attn_scaled.columns)
+            # 3/5/7. Attention Gaze
+            for col in y_gaze.columns:
+                run_ols(
+                    X_train_attn_scaled, X_test_attn_scaled, y_train_gaze[col], y_test_gaze[col],
+                    predictors=predictors,
+                    meta={"task": task, "llm_model": model_name, "attn_method": attn_method, "predictors": f"text+{attn_method}", "dependent": col}
+                )
+            # 4/6/8. Attention PCA
+            run_ols(
+                X_train_attn_scaled, X_test_attn_scaled, y_train_pca, y_test_pca,
+                predictors=predictors,
+                meta={"task": task, "llm_model": model_name, "attn_method": attn_method, "predictors": f"text+{attn_method}", "dependent": "pca"}
+            )
 
-# ------------------ Train-Test Split ------------------
-(X_train_text, X_test_text, 
- y_train_gaze, y_test_gaze, 
- y_train_pca, y_test_pca, 
- X_train_attn, X_test_attn) = train_test_split(
-    X_text, y_gaze, y_pca, X_text_attn, test_size=0.2, random_state=42
-)
-
-# ------------------ Feature Scaling ------------------
-# Create a log transformer that applies log1p (log(1+x))
-log_transformer = FunctionTransformer(np.log1p, validate=True)
-
-X_train_text_log = log_transformer.fit_transform(X_train_text)
-X_test_text_log = log_transformer.transform(X_test_text)
-
-X_train_attn_log = log_transformer.fit_transform(X_train_attn)
-X_test_attn_log = log_transformer.transform(X_test_attn)
-
-# ------------------ Train Models ------------------
-text_only_gaze_model = LinearRegression()
-text_only_gaze_model.fit(X_train_text_log, y_train_gaze)
-preds_text_only_gaze = text_only_gaze_model.predict(X_test_text_log)
-
-text_only_pca_model = LinearRegression()
-text_only_pca_model.fit(X_train_text_log, y_train_pca)
-preds_text_only_pca = text_only_pca_model.predict(X_test_text_log)
-preds_text_only_pca_inv = pca_obj.inverse_transform(preds_text_only_pca)
-
-text_attn_pca_model = LinearRegression()
-text_attn_pca_model.fit(X_train_attn_log, y_train_pca)
-preds_text_attn_pca = text_attn_pca_model.predict(X_test_attn_log)
-preds_text_attn_pca_inv = pca_obj.inverse_transform(preds_text_attn_pca)
-
-text_attn_gaze_model = LinearRegression()
-text_attn_gaze_model.fit(X_train_attn_log, y_train_gaze)
-preds_text_attn_gaze = text_attn_gaze_model.predict(X_test_attn_log)
-
-# ------------------ Baseline ------------------
-baseline_mean = y_train_pca.mean(axis=0)
-baseline_preds = np.tile(baseline_mean, (y_test_pca.shape[0], 1))
-
-# ------------------ Error Calculation ------------------
-errors_text_only_gaze = np.mean((preds_text_only_gaze - y_test_gaze.values)**2, axis=1)
-errors_text_only_pca = np.mean((preds_text_only_pca - y_test_pca.values)**2, axis=1)
-errors_text_only_pca_inv = np.mean((preds_text_only_pca_inv - y_test_gaze.values)**2, axis=1)
-
-errors_text_attn_pca = np.mean((preds_text_attn_pca - y_test_pca.values)**2, axis=1)
-errors_text_attn_pca_inv = np.mean((preds_text_attn_pca_inv - y_test_gaze.values)**2, axis=1)
-errors_text_attn_gaze = np.mean((preds_text_attn_gaze - y_test_gaze.values)**2, axis=1)
-errors_baseline = np.mean((baseline_preds - y_test_pca.values)**2, axis=1)
-
-# ------------------ Statistical Tests ------------------
-t_stat_1, p_val_1 = ttest_rel(errors_text_only_gaze, errors_text_only_pca_inv)
-t_stat_2, p_val_2 = ttest_rel(errors_text_only_pca, errors_text_attn_pca)
-t_stat_3, p_val_3 = ttest_rel(errors_text_attn_gaze, errors_text_attn_pca_inv)
-t_stat_4, p_val_4 = ttest_rel(errors_baseline, errors_text_attn_pca)
-
-w_stat_1, w_p_1 = wilcoxon(errors_text_only_gaze, errors_text_only_pca_inv)
-w_stat_2, w_p_2 = wilcoxon(errors_text_only_pca, errors_text_attn_pca)
-w_stat_3, w_p_3 = wilcoxon(errors_text_attn_gaze, errors_text_attn_pca_inv)
-w_stat_4, w_p_4 = wilcoxon(errors_baseline, errors_text_attn_pca)
-
-# ------------------ Metrics Calculation ------------------
-from sklearn.metrics import r2_score
-n_gaze = y_test_gaze.shape[0]
-n_pca = y_test_pca.shape[0]
-p_text = X_test_text_log.shape[1]
-p_attn = X_test_attn_log.shape[1]
-
-r2_text_only_gaze = r2_score(y_test_gaze, preds_text_only_gaze)
-rmse_text_only_gaze = np.sqrt(mean_squared_error(y_test_gaze, preds_text_only_gaze))
-adj_r2_text_only_gaze = 1 - (1 - r2_text_only_gaze) * (n_gaze - 1) / (n_gaze - p_text - 1)
-
-r2_text_only_pca = r2_score(y_test_pca, preds_text_only_pca)
-rmse_text_only_pca = np.sqrt(mean_squared_error(y_test_pca, preds_text_only_pca))
-adj_r2_text_only_pca = 1 - (1 - r2_text_only_pca) * (n_pca - 1) / (n_pca - p_text - 1)
-
-r2_text_only_pca_inv = r2_score(y_test_gaze, preds_text_only_pca_inv)
-rmse_text_only_pca_inv = np.sqrt(mean_squared_error(y_test_gaze, preds_text_only_pca_inv))
-adj_r2_text_only_pca_inv = 1 - (1 - r2_text_only_pca_inv) * (n_gaze - 1) / (n_gaze - p_text - 1)
-
-r2_text_attn_pca = r2_score(y_test_pca, preds_text_attn_pca)
-rmse_text_attn_pca = np.sqrt(mean_squared_error(y_test_pca, preds_text_attn_pca))
-adj_r2_text_attn_pca = 1 - (1 - r2_text_attn_pca) * (n_pca - 1) / (n_pca - p_attn - 1)
-
-r2_text_attn_pca_inv = r2_score(y_test_gaze, preds_text_attn_pca_inv)
-rmse_text_attn_pca_inv = np.sqrt(mean_squared_error(y_test_gaze, preds_text_attn_pca_inv))
-adj_r2_text_attn_pca_inv = 1 - (1 - r2_text_attn_pca_inv) * (n_gaze - 1) / (n_gaze - p_attn - 1)
-
-r2_text_attn_gaze = r2_score(y_test_gaze, preds_text_attn_gaze)
-rmse_text_attn_gaze = np.sqrt(mean_squared_error(y_test_gaze, preds_text_attn_gaze))
-adj_r2_text_attn_gaze = 1 - (1 - r2_text_attn_gaze) * (n_gaze - 1) / (n_gaze - p_attn - 1)
-
-# For baseline (using p=1 for a constant predictor)
-r2_baseline = r2_score(y_test_pca, baseline_preds)
-rmse_baseline = np.sqrt(mean_squared_error(y_test_pca, baseline_preds))
-adj_r2_baseline = 1 - (1 - r2_baseline) * (n_pca - 1) / (n_pca - 1 - 1)
-
-
-# ------------------ Feature importance explainability measures ------------------
-for i in selected_layers:
-    partial_reg_plot(
-        X=X_train_attn_log,
-        y=y_train_pca,
-        feature_names=list(X_text_attn.columns),
-        attention_feature=f"attention_layer_{i}",
-        save_dir=save_dir
-    )
-
-# Compute permutation importances on test set
-importances = compute_permutation_importance(
-    model=text_attn_pca_model,
-    X=X_test_attn_log,
-    y=y_test_pca,
-    feature_names=list(X_text_attn.columns),
-    metric_func=lambda y_true, y_pred: mean_squared_error(y_true, y_pred, multioutput='uniform_average'),
-    n_repeats=20
-)
-
-# Sort importances in descending order by importance score
-sorted_importances = sorted(importances, key=lambda x: x[1], reverse=True)
-# ------------------ Save Results ------------------
-save_dir = os.path.join(save_dir, "regression_results.txt")
-with open(save_dir, "w") as f:
-    f.write(f"Regression Results Model: {model_name}, ZuCo Task: {task} Using: {attn_method}\n==================\n\n")
-    
-    f.write("TextOnly_GazeModel vs TextOnly_PCAModel (inverted)\n")
-    f.write(f"t-test: t={t_stat_1:.4f}, p={p_val_1:.4f}\n")
-    f.write(f"Wilcoxon: stat={w_stat_1:.4f}, p={w_p_1:.4f}\n")
-    f.write("TextOnly_GazeModel Metrics:\n")
-    f.write(f"  Adjusted R²: {adj_r2_text_only_gaze:.4f}\n")
-    f.write(f"  RMSE: {rmse_text_only_gaze:.4f}\n")
-    f.write("TextOnly_PCAModel (inverted) Metrics:\n")
-    f.write(f"  Adjusted R²: {adj_r2_text_only_pca_inv:.4f}\n")
-    f.write(f"  RMSE: {rmse_text_only_pca_inv:.4f}\n\n")
-    
-    f.write("TextOnly_PCAModel vs TextAttn_PCAModel\n")
-    f.write(f"t-test: t={t_stat_2:.4f}, p={p_val_2:.4f}\n")
-    f.write(f"Wilcoxon: stat={w_stat_2:.4f}, p={w_p_2:.4f}\n")
-    f.write("TextOnly_PCAModel Metrics:\n")
-    f.write(f"  Adjusted R²: {adj_r2_text_only_pca:.4f}\n")
-    f.write(f"  RMSE: {rmse_text_only_pca:.4f}\n")
-    f.write("TextAttn_PCAModel Metrics:\n")
-    f.write(f"  Adjusted R²: {adj_r2_text_attn_pca:.4f}\n")
-    f.write(f"  RMSE: {rmse_text_attn_pca:.4f}\n\n")
-    
-    f.write("TextAttn_GazeModel vs TextAttn_PCAModel (inverted)\n")
-    f.write(f"t-test: t={t_stat_3:.4f}, p={p_val_3:.4f}\n")
-    f.write(f"Wilcoxon: stat={w_stat_3:.4f}, p={w_p_3:.4f}\n")
-    f.write("TextAttn_GazeModel Metrics:\n")
-    f.write(f"  Adjusted R²: {adj_r2_text_attn_gaze:.4f}\n")
-    f.write(f"  RMSE: {rmse_text_attn_gaze:.4f}\n")
-    f.write("TextAttn_PCAModel (inverted) Metrics:\n")
-    f.write(f"  Adjusted R²: {adj_r2_text_attn_pca_inv:.4f}\n")
-    f.write(f"  RMSE: {rmse_text_attn_pca_inv:.4f}\n\n")
-    
-    f.write("Baseline vs TextAttn_PCAModel\n")
-    f.write(f"t-test: t={t_stat_4:.4f}, p={p_val_4:.4f}\n")
-    f.write(f"Wilcoxon: stat={w_stat_4:.4f}, p={w_p_4:.4f}\n")
-    f.write("Baseline Metrics:\n")
-    f.write(f"  Adjusted R²: {adj_r2_baseline:.4f}\n")
-    f.write(f"  RMSE: {rmse_baseline:.4f}\n")
-    f.write("TextAttn_PCAModel Metrics:\n")
-    f.write(f"  Adjusted R²: {adj_r2_text_attn_pca:.4f}\n")
-    f.write(f"  RMSE: {rmse_text_attn_pca:.4f}\n\n")
-
-    f.write("Permutation Feature Importances (higher = more important):\n")
-    for name, imp, std in sorted_importances:
-        f.write(f"{name}: {imp:.6f} ± {std:.6f}\n")
-    
-print(f"Regression results saved to: {save_dir}")
+# Save unified results
+results_df = pd.DataFrame(results)
+results_df.to_csv("outputs/ols_unified_performance.csv", index=False)
+print("Unified OLS results saved to outputs/ols_unified_performance.csv")
