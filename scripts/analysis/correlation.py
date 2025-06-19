@@ -1,13 +1,10 @@
 import numpy as np
-import os
 import pandas as pd
-from scipy.stats import pearsonr, spearmanr
+from scipy.stats import spearmanr
 import torch
 from sklearn.decomposition import PCA
 from scripts.analysis.load_attention import load_processed_data
-from scripts.visuals.corr_plots import plot_corr, plot_gaze_intercorr
-import matplotlib.pyplot as plt
-import seaborn as sns
+from scripts.visuals.corr_plots import plot_corr, plot_corr_lineplots
 
 FEATURES = ['nFixations', 'meanPupilSize', 'GD', 'TRT', 'FFD']
 
@@ -23,12 +20,9 @@ def correlation_analysis(attention_nonpadded, human_df):
         attention_values = attention_nonpadded[layer_idx]
         for feature_idx, feature_name in enumerate(FEATURES):
             human_feature_values = feature_matrix[:, feature_idx]
-            pearson_r, pearson_p = pearsonr(attention_values, human_feature_values)
             spearman_r, spearman_p = spearmanr(attention_values, human_feature_values)
             row = {
                 'feature': 'F' if feature_name == 'nFixations' else 'mPS' if feature_name == 'meanPupilSize' else feature_name,
-                'pearson_r': pearson_r,
-                'pearson_p_value': pearson_p,
                 'spearman_r': spearman_r,
                 'spearman_p_value': spearman_p,
                 'layer': layer_idx
@@ -65,46 +59,61 @@ def pca_correlation_analysis(attention_nonpadded, pca_df):
             })
     return pd.DataFrame(results)
 
-def run_full_analysis(model_name: str, attn_methods: list):
-    all_results = []
+def combine_results(results_df, pca_results_df):
+    """
+    Combine results DataFrames for features and PCA components.
+    """
+    results_df = results_df.copy()
+    pca_results_df = pca_results_df.copy()
+    
+    # Add type column to distinguish between features and PCA components
+    results_df['type'] = 'Feature'
+    pca_results_df['type'] = 'PC'
+    
+    pca_results_df = pca_results_df.rename(columns={'principal_component': 'feature'})
+    combined = pd.concat([results_df, pca_results_df], ignore_index=True)
+    
+    return combined
+
+def run_full_analysis():
+    all_gaze_results = []
     all_pca_results = []
-    for task in tasks:
-        for attn_method in attn_methods:
-            human_df, attention, save_dir = load_processed_data(attn_method=attn_method, task=task, model_name=model_name)
-            
-            # Match attention to human_df
-            token_indices = map_token_indices(human_df)
-            sent_ids, word_ids = zip(*token_indices)
-            sent_ids = torch.tensor(sent_ids, dtype=torch.long)
-            word_ids = torch.tensor(word_ids, dtype=torch.long)
-            attention_nonpadded = attention[:, sent_ids, word_ids].numpy()
-            
-            # --- Correlation Analysis ---
-            results_df = correlation_analysis(attention_nonpadded, human_df)
-            pca_df, _, _, _ = apply_pca(human_df, FEATURES, n_components=1) # 1 component is sufficient according to PCA-gaze correlations
-            pca_results_df = pca_correlation_analysis(attention_nonpadded, pca_df)
-            results_df['attn_method'] = attn_method
-            pca_results_df['attn_method'] = attn_method
-            results_df['task'] = task
-            pca_results_df['task'] = task
-            all_results.append(results_df)
-            all_pca_results.append(pca_results_df)
+    for model_name in ['llama', 'bert']:
+        for task in ["task2", "task3"]:
+            for attn_method in ["raw", "flow", "saliency"]:
+                human_df, attention, save_dir = load_processed_data(attn_method=attn_method, task=task, model_name=model_name)
+                
+                # Match attention to human_df
+                token_indices = map_token_indices(human_df)
+                sent_ids, word_ids = zip(*token_indices)
+                sent_ids = torch.tensor(sent_ids, dtype=torch.long)
+                word_ids = torch.tensor(word_ids, dtype=torch.long)
+                attention_nonpadded = attention[:, sent_ids, word_ids].numpy()
+                
+                # --- Correlation Analysis ---
+                results_df = correlation_analysis(attention_nonpadded, human_df)
+                pca_df, _, _, _ = apply_pca(human_df, FEATURES, n_components=1) # 1 component is sufficient according to PCA-gaze correlations
+                pca_results_df = pca_correlation_analysis(attention_nonpadded, pca_df)
+                results_df['attn_method'] = attn_method
+                pca_results_df['attn_method'] = attn_method
+                results_df['task'] = task
+                pca_results_df['task'] = task
+                results_df['llm_model'] = model_name
+                pca_results_df['llm_model'] = model_name
+                all_gaze_results.append(results_df)
+                all_pca_results.append(pca_results_df)
     
     # --- Combined Results ---
-    combined_results = pd.concat(all_results, ignore_index=True)
-    combined_pca_results = pd.concat(all_pca_results, ignore_index=True)
-    plot_corr(combined_results, combined_pca_results, model_name, save_dir="outputs", significance_threshold=0.05)
+    all_gaze_results = pd.concat(all_gaze_results, ignore_index=True)
+    all_pca_results = pd.concat(all_pca_results, ignore_index=True)
+    combined_df = combine_results(all_gaze_results, all_pca_results)
+    plot_corr_lineplots(combined_df, save_dir="outputs")
+    #plot_corr(combined_results, combined_pca_results, model_name, save_dir="outputs", significance_threshold=0.05)
 
     # --- Feature Correlation Analysis ---
     all_FEATURES = FEATURES + ['SFD', 'GPT']  # Full feature list
     pca_df, _, _, _ = apply_pca(human_df, all_FEATURES, variance_threshold=0.95)
-    plot_gaze_intercorr(human_df, pca_df, all_FEATURES, save_dir="outputs") # Plot all features for exploration
+    #plot_gaze_intercorr(human_df, pca_df, all_FEATURES, save_dir="outputs") # Plot all features for exploration
 
 if __name__ == "__main__":
-    llm_models = ["llama", "bert"]
-    tasks = ["task2", "task3"]
-    attn_methods = ["raw", "flow", "saliency"]
-
-    for model_name in llm_models:
-        print(f"--- Combined analysis for {model_name} ---")
-        run_full_analysis(model_name=model_name, attn_methods=attn_methods)
+    run_full_analysis()

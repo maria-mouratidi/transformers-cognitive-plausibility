@@ -17,14 +17,13 @@ def set_academic_rcparams():
         'font.serif': ['Times New Roman', 'DejaVu Serif', 'serif']
     })
 
-def plot_corr(results_df, pca_results_df, model_name, save_dir=None, significance_threshold=0.05):
+def plot_corr(combined_df, model_name, save_dir=None):
     """
     Plot a heatmap combining feature and PCA component correlations.
     Optimized for academic paper publication.
     """
     set_academic_rcparams()
     
-    # Reorder columns to put PC1 first
     def reorder_columns_pc1_first(df):
         cols = df.columns.tolist()
         if 'PC1' in cols:
@@ -32,27 +31,19 @@ def plot_corr(results_df, pca_results_df, model_name, save_dir=None, significanc
             cols = ['PC1'] + cols
             return df[cols]
         return df
-    
-    method = 'spearman'  # or 'pearson'
-    results_df = results_df.copy()
-    pca_results_df = pca_results_df.copy()
-    results_df['type'] = 'Feature'
-    pca_results_df['type'] = 'PC'
-    pca_results_df = pca_results_df.rename(columns={'principal_component': 'feature'})
-    combined = pd.concat([results_df, pca_results_df], ignore_index=True)
 
     # Exclude 'raw' attention method from combined heatmap
-    flow_saliency_results_df = combined[combined['attn_method'] != 'raw'].copy()
+    flow_saliency_results_df = combined_df[combined_df['attn_method'] != 'raw'].copy()
     flow_saliency_results_df.loc[:, 'attn_layer'] = flow_saliency_results_df['attn_method']
-    pivot = flow_saliency_results_df.pivot(index=['task', 'attn_method'], columns='feature', values=f'{method}_r')
-    pvals = flow_saliency_results_df.pivot(index=['task', 'attn_method'], columns='feature', values=f'{method}_p_value')
-    mask = pvals >= significance_threshold
+    pivot = flow_saliency_results_df.pivot(index=['task', 'attn_method'], columns='feature', values=f'spearman_r')
+    pvals = flow_saliency_results_df.pivot(index=['task', 'attn_method'], columns='feature', values=f'spearman_p_value')
+    mask = pvals >= 0.05
     pivot = reorder_columns_pc1_first(pivot)
     pvals = reorder_columns_pc1_first(pvals)
 
     plt.figure(figsize=(8, 4))
     sns.heatmap(pivot, mask=mask, annot=True, fmt=".2f", center=0, 
-                cmap=palette, cbar_kws={'label': f'{method.title()} r', 'shrink': 0.7, 'aspect': 20, 'pad': 0.02},
+                cmap=palette, cbar_kws={'label': f'Spearman r', 'shrink': 0.7, 'aspect': 20, 'pad': 0.02},
                 linewidths=0.5, linecolor='white')
     plt.xlabel('')
     plt.ylabel('')
@@ -63,63 +54,100 @@ def plot_corr(results_df, pca_results_df, model_name, save_dir=None, significanc
                    dpi=600, bbox_inches='tight', format='pdf')
         plt.close()
 
-    # Plot task2 and task3 side by side with shared colorbar
-    raw_results_task2 = combined[(combined['attn_method'] == 'raw') & (combined['task'] == 'task2')]
-    raw_results_task3 = combined[(combined['attn_method'] == 'raw') & (combined['task'] == 'task3')]
-    
-    pivot_task2 = raw_results_task2.pivot(index='layer', columns='feature', values=f'{method}_r')
-    pvals_task2 = raw_results_task2.pivot(index='layer', columns='feature', values=f'{method}_p_value')
-    mask_task2 = pvals_task2 >= significance_threshold
-    
-    pivot_task3 = raw_results_task3.pivot(index='layer', columns='feature', values=f'{method}_r')
-    pvals_task3 = raw_results_task3.pivot(index='layer', columns='feature', values=f'{method}_p_value')
-    mask_task3 = pvals_task3 >= significance_threshold
 
-    pivot_task2 = reorder_columns_pc1_first(pivot_task2)
-    pvals_task2 = reorder_columns_pc1_first(pvals_task2)
-    mask_task2 = pvals_task2 >= significance_threshold
-    
-    pivot_task3 = reorder_columns_pc1_first(pivot_task3)
-    pvals_task3 = reorder_columns_pc1_first(pvals_task3)
-    mask_task3 = pvals_task3 >= significance_threshold
-    
-    # Determine shared color scale
-    vmin = min(pivot_task2.min().min(), pivot_task3.min().min())
-    vmax = max(pivot_task2.max().max(), pivot_task3.max().max())
-    
-    # Create side-by-side plot
-    if model_name == 'llama':
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 18))  
-    else:
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 12))
-    
-    # Task2 heatmap (left)
-    sns.heatmap(pivot_task2, mask=mask_task2, annot=True, fmt=".2f", 
-                 cmap=palette, center=0, ax=ax1, cbar=False,
-                vmin=vmin, vmax=vmax, linewidths=0.5, linecolor='white')
-    ax1.set_title("Task 2", fontweight='bold')
-    ax1.set_xlabel('')
-    ax1.set_ylabel('Layer')
-    ax1.tick_params(axis='y', rotation=0)
-    
-    # Task3 heatmap (right)
-    im = sns.heatmap(pivot_task3, mask=mask_task3, annot=True, fmt=".2f", 
-                     cmap=palette, center=0, ax=ax2, cbar=False,
-                     vmin=vmin, vmax=vmax, linewidths=0.5, linecolor='white')
-    ax2.set_title("Task 3", fontweight='bold')
-    ax2.set_xlabel('')
-    ax2.set_ylabel('')  # Remove y-label
-    ax2.tick_params(axis='y', rotation=0)
-    
-    # Add shared colorbar
-    cbar = fig.colorbar(im.collections[0], ax=[ax1, ax2], shrink=0.7, aspect=20, pad=0.02)
-    cbar.set_label(f'{method.title()} r', labelpad=20)
-    
-    if save_dir:
-        os.makedirs(save_dir, exist_ok=True)
-        plt.savefig(os.path.join(save_dir, f"raw_corrs_{model_name}.pdf"), 
-                   dpi=600, bbox_inches='tight', format='pdf')
-        plt.close()
+def plot_corr_lineplots(combined_df, save_dir=None):
+    """
+    Plot lineplots of raw correlations per task, one line per feature,
+    solid for LLaMA, dashed for BERT, both models in the same plot.
+    """
+    set_academic_rcparams()
+    features = [col for col in combined_df['feature'].unique() if col != 'type']
+    line_styles = {'llama': '-', 'bert': '--'}
+    palette_dict = dict(zip(features, sns.color_palette("tab10", n_colors=len(features))))
+    model_labels = {'llama': 'LLaMA', 'bert': 'BERT'}
+
+    for task in ['task2', 'task3']:
+        plt.figure(figsize=(14, 14))
+        task_df = combined_df[(combined_df['attn_method'] == 'raw') & (combined_df['task'] == task)]
+        for feature in features:
+            for model in ['llama', 'bert']:
+                model_df = task_df[(task_df['feature'] == feature) & (task_df['llm_model'].str.lower() == model)]
+                model_df = model_df.sort_values('layer')
+                y = model_df['spearman_r'].where(model_df['spearman_p_value'] < 0.05, np.nan)
+                plt.plot(
+                    model_df['layer'], y,
+                    label=f"{feature} ({model_labels[model]})",
+                    linestyle=line_styles[model],
+                    color=palette_dict[feature],
+                    marker='o',
+                    linewidth=2,
+                    alpha=0.95
+                )
+        plt.title(f"Raw Attention Correlations: {task.title()}", fontweight='bold')
+        plt.xlabel("Layer")
+        plt.ylabel("Spearman r")
+        plt.ylim(-0.2, 0.75)
+        # Only show unique legend entries
+        handles, labels = plt.gca().get_legend_handles_labels()
+        by_label = dict(zip(labels, handles))
+        plt.legend(by_label.values(), by_label.keys(), fontsize=13, ncol=2)
+        plt.grid(True, which='both', linestyle=':', linewidth=0.7, alpha=0.7)
+        plt.tight_layout()
+        if save_dir:
+            os.makedirs(save_dir, exist_ok=True)
+            plt.savefig(os.path.join(save_dir, f"corr_lineplot_{task}.pdf"),
+                        dpi=600, bbox_inches='tight', format='pdf')
+            plt.close()
+
+def plot_corr_lineplots_mean_shadow(combined_df, save_dir=None):
+    """
+    Plot mean correlation across features per LLM model, with std as shadow.
+    Solid line for LLaMA, dashed for BERT.
+    """
+    set_academic_rcparams()
+    tasks = ['task2', 'task3']
+    models = ['llama', 'bert']
+    line_styles = {'llama': '-', 'bert': '--'}
+    colors = {'llama': '#1f77b4', 'bert': '#ff7f0e'}
+    model_labels = {'llama': 'LLaMA', 'bert': 'BERT'}
+
+    for task in tasks:
+        plt.figure(figsize=(8, 5))
+        task_df = combined_df[(combined_df['attn_method'] == 'raw') & (combined_df['task'] == task)]
+        for model in models:
+            model_df = task_df[task_df['model'].str.lower() == model]
+            # Group by layer, aggregate mean and std across features
+            grouped = model_df.groupby('layer')['spearman_r']
+            mean = grouped.mean()
+            std = grouped.std()
+            # Only keep layers present in both mean and std
+            layers = mean.index
+            plt.plot(
+                layers, mean, 
+                label=model_labels[model],
+                linestyle=line_styles[model],
+                color=colors[model],
+                marker='o',
+                linewidth=2,
+                alpha=0.95
+            )
+            plt.fill_between(
+                layers, mean - std, mean + std,
+                color=colors[model],
+                alpha=0.2
+            )
+        plt.title(f"Raw Attention Correlations (Mean ± SD): {task.title()}", fontweight='bold')
+        plt.xlabel("Layer")
+        plt.ylabel("Spearman r")
+        plt.ylim(-0.2, 1.0)
+        plt.legend(fontsize=14)
+        plt.grid(True, which='both', linestyle=':', linewidth=0.7, alpha=0.7)
+        plt.tight_layout()
+        if save_dir:
+            os.makedirs(save_dir, exist_ok=True)
+            plt.savefig(os.path.join(save_dir, f"corr_lineplot_mean_shadow_{task}.pdf"),
+                        dpi=600, bbox_inches='tight', format='pdf')
+            plt.close()
 
 def plot_gaze_intercorr(human_df, pca_df, features, save_dir=None):
     """
