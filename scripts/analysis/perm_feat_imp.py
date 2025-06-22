@@ -1,10 +1,10 @@
-from sklearn.metrics import mean_squared_error
+from sklearn.metrics import root_mean_squared_error
 import numpy as np
 import copy
 
 def compute_permutation_importance(
     model, X: np.ndarray, y: np.ndarray, feature_names: list, 
-    metric_func=mean_squared_error, n_repeats=10, random_state=42
+    metric_func=root_mean_squared_error, n_repeats=10, random_state=42
 ):
     """
     Compute permutation importance for each feature using the specified regression model.

@@ -2,7 +2,18 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 from scripts.analysis.correlation import FEATURES
-from scripts.visuals.corr_plots import set_academic_rcparams
+
+def set_academic_rcparams():
+    plt.rcParams.update({
+        'font.size': 36,
+        'axes.labelsize': 36,
+        'axes.titlesize': 36,
+        'xtick.labelsize': 28,
+        'ytick.labelsize': 26,
+        'legend.fontsize': 32,
+        'font.family': 'serif',
+        'font.serif': ['Times New Roman', 'DejaVu Serif', 'serif']
+    })
 
 def get_model_type(row):
     if row["predictors"] == "text_only":
@@ -69,6 +80,7 @@ def plot_attention_feature_importances(perf_path, llm_model, filename_prefix):
     df["feature_name"] = df["feature_name"].replace({"attention_layer_1": "attention"})
     # Only keep Gaze and PCA targets
     df = df[df["TargetType"].isin(["Gaze", "PCA"])]
+    df["abs_t"] = df["t"].abs()
 
     feature_order = sorted([f for f in df["feature_name"].unique() if f != llm_model])
     model_order = [f"text+raw", f"text+flow", f"text+saliency"]
@@ -79,7 +91,7 @@ def plot_attention_feature_importances(perf_path, llm_model, filename_prefix):
     g.map_dataframe(
         sns.barplot,
         x="feature_name",
-        y="perm_importance_mean",
+        y="abs_t",
         hue="Model",
         hue_order=model_order,
         order=feature_order,
@@ -87,12 +99,12 @@ def plot_attention_feature_importances(perf_path, llm_model, filename_prefix):
         palette=CUSTOM_PALETTE[1:], 
         errorbar="sd"
     )
-    g.set_axis_labels("", "Permutation Importance (mean increase in MSE)")
+    g.set_axis_labels("", "|t|")
     for ax, title in zip(g.axes.flatten(), g.col_names):
         ax.set_title(f"Task {title[-1]}", fontweight='bold')
-        ax.set_ylim(bottom=0)
+        #ax.set_ylim(bottom=0)
         
-    g.add_legend(title="Model", loc='upper right')
+    #g.add_legend(title="Model", loc='upper right')
     plt.tight_layout()
     plt.autoscale(enable=True, axis='y', tight=True)
     plt.savefig(f"{filename_prefix}_{llm_model}.pdf", dpi=600, bbox_inches='tight', format='pdf')
