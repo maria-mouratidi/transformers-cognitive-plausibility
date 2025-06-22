@@ -77,7 +77,7 @@ def run_ols(X_train, X_test, y_train, y_test, predictors, meta):
 for task in tasks:
     for model_name in llm_models:
         #text_df = pd.read_csv(f'materials/text_features_{task}_{model_name}.csv')
-        text_df = pd.read_csv(f'materials/text_features_{task}_llama.csv')
+        text_df = pd.read_csv(f'materials/text_features_{task}_{model_name}.csv')
         text_df['role'] = text_df['role'].map({'function': 0, 'content': 1})
         X_text = text_df[['frequency', 'length', 'surprisal', 'role']]
         gaze_df, _, _ = load_processed_data(attn_method="raw", task=task, model_name=model_name)

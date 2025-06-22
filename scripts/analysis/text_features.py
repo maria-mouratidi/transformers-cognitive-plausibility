@@ -33,7 +33,8 @@ def get_surprisals(
     tokenizer=None,
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
 ) -> list:
-    model.to(device)
+    if model_name == "bert":
+        model.to(device)
     model.eval()
     log2 = math.log(2)
     surprisals = []
@@ -67,15 +68,15 @@ def get_surprisals(
             surprisals.append(sentence_surprisals)
     elif model_name == "llama":
         # LLaMA: Causal LM surprisals
-        with torch.no_grad():
-            logits = model(input_ids).logits  # [batch, seq_len, vocab]
-            log_probs = F.log_softmax(logits, dim=-1)
         for sent_idx, (word_map, input_id_row) in tqdm(
             enumerate(zip(word_mappings, input_ids)), total=len(word_mappings), desc="LLaMA sentences"
         ):
             tokens = input_id_row.tolist()
             token_pos = sum(n for _, n, _ in word_map[:prompt_len])
             sentence_surprisals = []
+            with torch.no_grad():
+                logits = model(input_id_row.unsqueeze(0)).logits  # process one sentence at a time
+                log_probs = F.log_softmax(logits, dim=-1)
             for word, num_tokens, word_tokens in word_map[prompt_len:]:
                 token_surprisals = []
                 for i, tok_id in enumerate(word_tokens):
@@ -87,19 +88,20 @@ def get_surprisals(
                     if pos == 0:
                         token_surprisals.append(0.0)
                     else:
-                        token_log_prob = log_probs[sent_idx, pos - 1, tok_id]
+                        token_log_prob = log_probs[0, pos - 1, tok_id]
                         token_surprisals.append(-token_log_prob.item() / log2)
                 word_surprisal = sum(token_surprisals)
                 sentence_surprisals.append((word, word_surprisal))
                 token_pos += num_tokens
             surprisals.append(sentence_surprisals)
+            torch.cuda.empty_cache()  # Clear cache to avoid memory issues
     return surprisals
 
 subset = False
 
 if __name__ == "__main__":
     tasks = ["task2", "task3"]
-    models = ["bert", "llama"]
+    models = ["llama"]
     attention_method = "raw"
     
     for model_name in models:
