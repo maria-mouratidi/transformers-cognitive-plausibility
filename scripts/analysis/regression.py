@@ -1,15 +1,12 @@
 import warnings
 warnings.filterwarnings("ignore")
 import pandas as pd
-import os
 import numpy as np
 from statsmodels.api import OLS, add_constant
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
-from scripts.analysis.correlation import load_processed_data, map_token_indices
-from scripts.analysis.correlation_pca import apply_pca
-from scripts.analysis.correlation import FEATURES
-
+from scripts.analysis.correlation import load_processed_data, map_token_indices, apply_pca, FEATURES
+from scripts.analysis.perm_feat_imp import compute_permutation_importance
 # ------------------ Configurations ------------------
 llm_models = ["llama", "bert"]
 tasks = ["task2", "task3"]
@@ -53,6 +50,13 @@ def run_ols(X_train, X_test, y_train, y_test, predictors, meta):
     p = X_test_const.shape[1] - 1
     r2_adj = 1 - (1 - r2) * (n - 1) / (n - p - 1)
     rmse = np.sqrt(np.mean((y_test - y_pred) ** 2))
+    # Convert to numpy arrays for permutation importance
+    X_test_np = X_test_const.values
+    y_test_np = y_test.values if hasattr(y_test, "values") else y_test
+    perm_importances = compute_permutation_importance(
+        ols_model, X_test_np, y_test_np, X_test_const.columns.tolist(), n_repeats=10
+    )
+    perm_imp_dict = {name: (mean_imp, std_imp) for name, mean_imp, std_imp in perm_importances}
     for feat in X_train_const.columns:
         results.append({
             **meta,
@@ -65,7 +69,9 @@ def run_ols(X_train, X_test, y_train, y_test, predictors, meta):
             "p_value": ols_model.pvalues[feat],
             "rsquared": r2,
             "rsquared_adj": r2_adj,
-            "rmse": rmse
+            "rmse": rmse,
+            "perm_importance_mean": perm_imp_dict.get(feat, (np.nan, np.nan))[0],
+            "perm_importance_std": perm_imp_dict.get(feat, (np.nan, np.nan))[1]
         })
 
 for task in tasks:

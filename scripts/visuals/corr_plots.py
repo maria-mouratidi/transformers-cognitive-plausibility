@@ -17,154 +17,163 @@ def set_academic_rcparams():
         'font.serif': ['Times New Roman', 'DejaVu Serif', 'serif']
     })
 
-def plot_corr(combined_df, model_name, save_dir=None):
+def plot_other_corr(combined_df, save_dir=None, log_file=None):
     """
-    Plot a heatmap combining feature and PCA component correlations.
-    Optimized for academic paper publication.
+    Plot a single barplot showing average Spearman r across features
+    for each model-task-method combination (flow & saliency only).
+    Also logs the mean and std values.
     """
     set_academic_rcparams()
-    
-    def reorder_columns_pc1_first(df):
-        cols = df.columns.tolist()
-        if 'PC1' in cols:
-            cols.remove('PC1')
-            cols = ['PC1'] + cols
-            return df[cols]
-        return df
 
-    # Exclude 'raw' attention method from combined heatmap
-    flow_saliency_results_df = combined_df[combined_df['attn_method'] != 'raw'].copy()
-    flow_saliency_results_df.loc[:, 'attn_layer'] = flow_saliency_results_df['attn_method']
-    pivot = flow_saliency_results_df.pivot(index=['task', 'attn_method'], columns='feature', values=f'spearman_r')
-    pvals = flow_saliency_results_df.pivot(index=['task', 'attn_method'], columns='feature', values=f'spearman_p_value')
-    mask = pvals >= 0.05
-    pivot = reorder_columns_pc1_first(pivot)
-    pvals = reorder_columns_pc1_first(pvals)
+    # Filter only 'flow' and 'saliency' methods
+    bar_df = combined_df[combined_df['attn_method'].isin(['flow', 'saliency'])].copy()
 
-    plt.figure(figsize=(8, 4))
-    sns.heatmap(pivot, mask=mask, annot=True, fmt=".2f", center=0, 
-                cmap=palette, cbar_kws={'label': f'Spearman r', 'shrink': 0.7, 'aspect': 20, 'pad': 0.02},
-                linewidths=0.5, linecolor='white')
-    plt.xlabel('')
-    plt.ylabel('')
-    plt.yticks(rotation=0)
+    model_labels = {'llama': 'Llama', 'bert': 'BERT'}
+    task_labels = {'task2': 'Task 2', 'task3': 'Task 3'}
+    colors = {
+        ('bert', 'task2'): '#1f77b4',      # blue
+        ('bert', 'task3'): '#aec7e8',      # light blue
+        ('llama', 'task2'): '#ff7f0e',     # orange
+        ('llama', 'task3'): '#ffbb78',     # light orange
+    }
+    method_hatches = {'flow': '', 'saliency': '/'}
+
+    # Prepare bar order
+    bar_order = []
+    for model in ['bert', 'llama']:
+        for task in ['task2', 'task3']:
+            bar_order.append((model, task))
+
+    x = np.arange(len(bar_order))
+    width = 0.35
+
+    plt.figure(figsize=(8, 5))
+
+    all_bars = []
+    log_lines = []
+    for i, method in enumerate(['flow', 'saliency']):
+        bar_positions = x + (i - 0.5) * width  # offset left/right
+        means, stds, bar_colors, hatches = [], [], [], []
+
+        for model, task in bar_order:
+            sub_df = bar_df[
+                (bar_df['llm_model'].str.lower() == model) &
+                (bar_df['task'] == task) &
+                (bar_df['attn_method'] == method)
+            ]
+            grouped = sub_df.groupby('feature')['spearman_r'].mean()
+            mean_val = grouped.mean()
+            std_val = grouped.std()
+            means.append(mean_val)
+            stds.append(std_val)
+            bar_colors.append(colors[(model, task)])
+            hatches.append(method_hatches[method])
+            log_lines.append(
+                f"{model_labels[model]} {task_labels[task]} {method}: mean={mean_val:.3f}, std={std_val:.3f}"
+            )
+
+        bars = plt.bar(
+            bar_positions, means, width=width,
+            yerr=stds,
+            color=bar_colors,
+            hatch=method_hatches[method],
+            label=method
+        )
+        all_bars.extend(bars)
+
+    # X-tick labels
+    x_labels = [f"{model_labels[model]}\n{task_labels[task]}" for model, task in bar_order]
+    plt.xticks(x, x_labels)
+    plt.ylabel("Spearman r")
+    plt.ylim(-0.2, 0.8)
+    plt.grid(False)  # Remove grid lines
+    plt.legend(title="Method")
     plt.tight_layout()
+
+    # Output log
+    log_text = "\n".join(log_lines)
+    if log_file:
+        with open(log_file, "w") as f:
+            f.write(log_text)
+    else:
+        print("Correlation summary for barplot:")
+        print(log_text)
+
     if save_dir:
-        plt.savefig(os.path.join(save_dir, f"combined_corrs_{model_name}.pdf"), 
-                   dpi=600, bbox_inches='tight', format='pdf')
+        os.makedirs(save_dir, exist_ok=True)
+        plt.savefig(os.path.join(save_dir, "correlations_nonraw.pdf"),
+                    dpi=600, bbox_inches='tight', format='pdf')
         plt.close()
 
-
-def plot_corr_lineplots(combined_df, save_dir=None):
+def plot_raw_corr(combined_df, save_dir=None, log_file=None):
     """
-    Plot lineplots of raw correlations per task, one line per feature,
-    solid for LLaMA, dashed for BERT, both models in the same plot.
-    """
-    set_academic_rcparams()
-    features = [col for col in combined_df['feature'].unique() if col != 'type']
-    line_styles = {'llama': '-', 'bert': '--'}
-    palette_dict = dict(zip(features, sns.color_palette("tab10", n_colors=len(features))))
-    model_labels = {'llama': 'LLaMA', 'bert': 'BERT'}
-
-    for task in ['task2', 'task3']:
-        plt.figure(figsize=(14, 14))
-        task_df = combined_df[(combined_df['attn_method'] == 'raw') & (combined_df['task'] == task)]
-        for feature in features:
-            for model in ['llama', 'bert']:
-                model_df = task_df[(task_df['feature'] == feature) & (task_df['llm_model'].str.lower() == model)]
-                model_df = model_df.sort_values('layer')
-                y = model_df['spearman_r'].where(model_df['spearman_p_value'] < 0.05, np.nan)
-                plt.plot(
-                    model_df['layer'], y,
-                    label=f"{feature} ({model_labels[model]})",
-                    linestyle=line_styles[model],
-                    color=palette_dict[feature],
-                    marker='o',
-                    linewidth=2,
-                    alpha=0.95
-                )
-        plt.title(f"Raw Attention Correlations: {task.title()}", fontweight='bold')
-        plt.xlabel("Layer")
-        plt.ylabel("Spearman r")
-        plt.ylim(-0.2, 0.75)
-        # Only show unique legend entries
-        handles, labels = plt.gca().get_legend_handles_labels()
-        by_label = dict(zip(labels, handles))
-        plt.legend(by_label.values(), by_label.keys(), fontsize=13, ncol=2)
-        plt.grid(True, which='both', linestyle=':', linewidth=0.7, alpha=0.7)
-        plt.tight_layout()
-        if save_dir:
-            os.makedirs(save_dir, exist_ok=True)
-            plt.savefig(os.path.join(save_dir, f"corr_lineplot_{task}.pdf"),
-                        dpi=600, bbox_inches='tight', format='pdf')
-            plt.close()
-
-def plot_corr_lineplots_mean_shadow(combined_df, save_dir=None):
-    """
-    Plot mean correlation across features per LLM model, with std as shadow.
-    Solid line for LLaMA, dashed for BERT.
+    Lineplots of mean correlation across features for raw attention
+    Each model-task pair has its own color, std as shadow.
+    Also logs the mean and std values per layer.
     """
     set_academic_rcparams()
-    tasks = ['task2', 'task3']
-    models = ['llama', 'bert']
-    line_styles = {'llama': '-', 'bert': '--'}
-    colors = {'llama': '#1f77b4', 'bert': '#ff7f0e'}
-    model_labels = {'llama': 'LLaMA', 'bert': 'BERT'}
 
-    for task in tasks:
-        plt.figure(figsize=(8, 5))
-        task_df = combined_df[(combined_df['attn_method'] == 'raw') & (combined_df['task'] == task)]
-        for model in models:
-            model_df = task_df[task_df['model'].str.lower() == model]
-            # Group by layer, aggregate mean and std across features
-            grouped = model_df.groupby('layer')['spearman_r']
+    pair_colors = {
+        ('bert', 'task2'): '#1f77b4',      # blue
+        ('bert', 'task3'): '#aec7e8',      # light blue
+        ('llama', 'task2'): '#ff7f0e',     # orange
+        ('llama', 'task3'): '#ffbb78',     # light orange
+    }
+    model_labels = {'llama': 'Llama', 'bert': 'BERT'}
+    task_labels = {'task2': 'Task 2', 'task3': 'Task 3'}
+
+    plt.figure(figsize=(8, 5))
+    log_lines = []
+    for model in ['bert', 'llama']:
+        for task in ['task2', 'task3']:
+            task_df = combined_df[
+                (combined_df['attn_method'] == 'raw') &
+                (combined_df['task'] == task) &
+                (combined_df['llm_model'].str.lower() == model)
+            ]
+            grouped = task_df.groupby('layer')['spearman_r']
             mean = grouped.mean()
             std = grouped.std()
-            # Only keep layers present in both mean and std
             layers = mean.index
+            label = f"{model_labels[model]} {task_labels[task]}"
+            color = pair_colors[(model, task)]
             plt.plot(
-                layers, mean, 
-                label=model_labels[model],
-                linestyle=line_styles[model],
-                color=colors[model],
+                layers, mean,
+                label=label,
+                color=color,
                 marker='o',
                 linewidth=2,
-                alpha=0.95
+                alpha=0.95,
+                markerfacecolor=color,
+                markeredgecolor=color
             )
             plt.fill_between(
                 layers, mean - std, mean + std,
-                color=colors[model],
-                alpha=0.2
+                color=color,
+                alpha=0.15
             )
-        plt.title(f"Raw Attention Correlations (Mean ± SD): {task.title()}", fontweight='bold')
-        plt.xlabel("Layer")
-        plt.ylabel("Spearman r")
-        plt.ylim(-0.2, 1.0)
-        plt.legend(fontsize=14)
-        plt.grid(True, which='both', linestyle=':', linewidth=0.7, alpha=0.7)
-        plt.tight_layout()
-        if save_dir:
-            os.makedirs(save_dir, exist_ok=True)
-            plt.savefig(os.path.join(save_dir, f"corr_lineplot_mean_shadow_{task}.pdf"),
-                        dpi=600, bbox_inches='tight', format='pdf')
-            plt.close()
-
-def plot_gaze_intercorr(human_df, pca_df, features, save_dir=None):
-    """
-    Plot heatmap of inter-correlations among gaze features and PCA components.
-    """
-    set_academic_rcparams()
-    # Replace feature names for display
-    combined = pd.concat([human_df[features], pca_df], axis=1)
-    combined = combined.rename(columns={'meanPupilSize': 'mPS', 'nFixations': 'F'})
-    corr_matrix = combined.corr(method='spearman')
-    plt.figure(figsize=(8, 6))
-    sns.heatmap(corr_matrix, annot=True, center=0, cmap=palette)
-    plt.yticks(rotation=0)
+            for l in layers:
+                log_lines.append(
+                    f"{label} Layer {l}: mean={mean[l]:.3f}, std={std[l]:.3f}"
+                )
+    plt.xlabel("Layer")
+    plt.ylabel("Spearman r")
+    plt.ylim(-0.2, 0.8)
+    plt.legend(fontsize=14)
+    plt.grid(True, which='both', linestyle=':', linewidth=0.7, alpha=0.7)
     plt.tight_layout()
+
+    # Output log
+    log_text = "\n".join(log_lines)
+    if log_file:
+        with open(log_file, "w") as f:
+            f.write(log_text)
+    else:
+        print("Correlation summary for raw attention lineplot:")
+        print(log_text)
+
     if save_dir:
-        save_path = os.path.join(save_dir, f'intercorrs.pdf')
-        plt.savefig(save_path, dpi=300, bbox_inches='tight', format='pdf')
-        print(f"Saved inter-correlation heatmap to {save_path}")
-
-
+        os.makedirs(save_dir, exist_ok=True)
+        plt.savefig(os.path.join(save_dir, f"correlations_raw.pdf"),
+                    dpi=600, bbox_inches='tight', format='pdf')
+        plt.close()

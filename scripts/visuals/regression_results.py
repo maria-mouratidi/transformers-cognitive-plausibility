@@ -69,18 +69,17 @@ def plot_attention_feature_importances(perf_path, llm_model, filename_prefix):
     df["feature_name"] = df["feature_name"].replace({"attention_layer_1": "attention"})
     # Only keep Gaze and PCA targets
     df = df[df["TargetType"].isin(["Gaze", "PCA"])]
-    df["abs_t"] = df["t"].abs()
 
     feature_order = sorted([f for f in df["feature_name"].unique() if f != llm_model])
     model_order = [f"text+raw", f"text+flow", f"text+saliency"]
 
     g = sns.FacetGrid(
-        df, col="task", sharey=True, height=6, aspect=2  # Changed to match 12x6
+        df, col="task", sharey=True, height=6, aspect=2
     )
     g.map_dataframe(
         sns.barplot,
         x="feature_name",
-        y="abs_t",
+        y="perm_importance_mean",
         hue="Model",
         hue_order=model_order,
         order=feature_order,
@@ -88,10 +87,9 @@ def plot_attention_feature_importances(perf_path, llm_model, filename_prefix):
         palette=CUSTOM_PALETTE[1:], 
         errorbar="sd"
     )
-    g.set_axis_labels("", "|t| value (avg. Gaze & PCA)")
+    g.set_axis_labels("", "Permutation Importance (mean increase in MSE)")
     for ax, title in zip(g.axes.flatten(), g.col_names):
         ax.set_title(f"Task {title[-1]}", fontweight='bold')
-        #plt.setp(ax.get_xticklabels(), rotation=45, ha='right')
         ax.set_ylim(bottom=0)
         
     g.add_legend(title="Model", loc='upper right')

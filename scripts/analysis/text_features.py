@@ -57,7 +57,7 @@ def get_surprisals(
                     masked = input_id_row.clone()
                     masked[pos] = tokenizer.mask_token_id
                     with torch.no_grad():
-                        outputs = model(masked.unsqueeze(0))
+                        outputs = model(masked.unsqueeze(0).to(device))
                         logits = outputs.logits if hasattr(outputs, "logits") else outputs[0]
                         log_probs = F.log_softmax(logits, dim=-1)
                         token_log_prob = log_probs[0, pos, tok_id]
@@ -100,8 +100,8 @@ subset = False
 if __name__ == "__main__":
     tasks = ["task2", "task3"]
     models = ["bert", "llama"]
-    attention_method = "raw"  # or whatever method is appropriate for your use-case
-
+    attention_method = "raw"
+    
     for model_name in models:
         print(f"Processing text features for model: {model_name}")
         # Load model and tokenizer

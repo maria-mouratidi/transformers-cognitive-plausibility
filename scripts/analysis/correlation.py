@@ -4,7 +4,7 @@ from scipy.stats import spearmanr
 import torch
 from sklearn.decomposition import PCA
 from scripts.analysis.load_attention import load_processed_data
-from scripts.visuals.corr_plots import plot_corr, plot_corr_lineplots
+from scripts.visuals.corr_plots import plot_other_corr, plot_raw_corr
 
 FEATURES = ['nFixations', 'meanPupilSize', 'GD', 'TRT', 'FFD']
 
@@ -107,8 +107,8 @@ def run_full_analysis():
     all_gaze_results = pd.concat(all_gaze_results, ignore_index=True)
     all_pca_results = pd.concat(all_pca_results, ignore_index=True)
     combined_df = combine_results(all_gaze_results, all_pca_results)
-    plot_corr_lineplots(combined_df, save_dir="outputs")
-    #plot_corr(combined_results, combined_pca_results, model_name, save_dir="outputs", significance_threshold=0.05)
+    plot_raw_corr(combined_df, save_dir="outputs")
+    plot_other_corr(combined_df, save_dir="outputs")
 
     # --- Feature Correlation Analysis ---
     all_FEATURES = FEATURES + ['SFD', 'GPT']  # Full feature list
