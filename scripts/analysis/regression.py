@@ -64,6 +64,7 @@ def run_ols(X_train, X_test, y_train, y_test, predictors, meta):
             "rsquared": r2,
             "rsquared_adj": r2_adj,
             "rmse": rmse,
+            "f_pvalue": ols_model.f_pvalue,
             "perm_importance_mean": perm_imp_dict.get(feat, (np.nan, np.nan))[0],
             "perm_importance_std": perm_imp_dict.get(feat, (np.nan, np.nan))[1]
         })
@@ -141,18 +142,21 @@ for task in tasks:
                     "attn_method": attn_method,
                     "text_feature": feat,
                     "spearman_r": r,
-                    "p_value": pvalue
+                    "spearman_p_value": pvalue
 
                 })
 
 # Save unified results
 results_df = pd.DataFrame(results)
+nonsig = results_df[results_df["p_value"] >= 0.05][['llm_model', 'task', 'feature_name', 'predictors', 'dependent']]
+import pprint
+#pprint.pprint(nonsig.drop_duplicates().to_dict(orient="records"))
 results_df.to_csv("outputs/ols_unified_performance.csv", index=False)
 
 corr_df = pd.DataFrame(corr_results)
-#corr_df.to_csv("outputs/text_attn_corr.csv", index=False)
+# #corr_df.to_csv("outputs/text_attn_corr.csv", index=False)
 
-# Plotting
+# # Plotting
 plot_metric(results_df, "rsquared_adj", "outputs/ols_r2.pdf")
 plot_attention_feature_importances(results_df, "outputs/ols_feature_importances")
 plot_text_attn_corr(corr_df, save_path="outputs/text_attn_corr.pdf")

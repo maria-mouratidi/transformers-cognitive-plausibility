@@ -11,9 +11,9 @@ def get_model_type(row):
         return "Attention"
     return "Other"
 
-def preprocess_perf_df(df):
+def preprocess_results_df(df):
     df = df.copy()
-    group_cols = ["task", "llm_model", "attn_method", "predictors", "dependent"]
+    group_cols = ["task", "llm_model", "attn_method", "predictors", "dependent", "f_pvalue"]
     agg_cols = {"rsquared": "mean", "rsquared_adj": "mean", "rmse": "mean"}
     df = df.groupby(group_cols, as_index=False).agg(agg_cols)
     df["ModelType"] = df.apply(get_model_type, axis=1)
@@ -23,7 +23,7 @@ def preprocess_perf_df(df):
 
 def plot_metric(df, metric, filename):
     
-    plot_df = preprocess_perf_df(df)
+    plot_df = preprocess_results_df(df)
     plt.rcParams.update(ols_plt_params)
     plot_df = plot_df.copy()
     plot_df["bar_type"] = plot_df.apply(
@@ -44,10 +44,32 @@ def plot_metric(df, metric, filename):
     for idx, llm_model in enumerate(llm_models):
         ax = axes[idx]
         subdf = plot_df[plot_df["llm_model"] == llm_model]
-        sns.barplot(
+        bars = sns.barplot(
             data=subdf, x="x_label", y=metric, hue="bar_type",
             order=x_order, hue_order=hue_order, errorbar="sd", palette=CUSTOM_PALETTE, ax=ax
         )
+        # Annotate bars with (ns) if not significant
+        n_hues = len(hue_order)
+        total_width = 0.8  # default seaborn bar width
+        width_per_bar = total_width / n_hues
+        for i, x_label in enumerate(x_order):
+            for hue_idx, bar_type in enumerate(hue_order):
+                group = subdf[(subdf["x_label"] == x_label) & (subdf["bar_type"] == bar_type)]
+                if not group.empty:
+                    y_val = group[metric].max()
+                    pval = group["f_pvalue"].max()
+                    annotation = ""
+                    if pval >= 0.05:
+                        annotation = " (ns)"
+                    x_offset = i - total_width/2 + width_per_bar/2 + hue_idx*width_per_bar
+                    ax.text(
+                        x=x_offset,
+                        y=y_val + 0.02,
+                        s=annotation,
+                        ha='center',
+                        va='bottom',
+                        fontsize=12
+                    )
         ax.set_xlabel("")
         ax.set_ylabel(r"$R^2$ adjusted" if metric == "rsquared_adj" else f"{metric.capitalize()}")
         ax.set_ylim(top=0.6)
@@ -66,8 +88,7 @@ def plot_attention_feature_importances(df, filename):
     plt.rcParams.update(ols_plt_params)
     df = df[
         (df["attn_method"].isin(["raw", "flow", "saliency"])) &
-        (df["feature_name"] != "const") &
-        (~df["feature_name"].isin(["attention_layer_31"]))
+        (df["feature_name"] != "const")
     ]
     df["TargetType"] = df["dependent"].apply(lambda x: "Gaze" if x in FEATURES else ("PCA" if x == "pca" else "Other"))
     df["Model"] = df["attn_method"].apply(lambda x: f"text+{x}")
@@ -81,13 +102,13 @@ def plot_attention_feature_importances(df, filename):
 
     n_rows = 2
     n_cols = len(task_order)
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(32.4, 22), sharey='row')
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(36, 24), sharey='row')
 
     for row_idx, model_name in enumerate(["bert", "llama"]):
         for col_idx, task in enumerate(task_order):
             ax = axes[row_idx, col_idx] if n_cols > 1 else axes[row_idx]
             subdf = df[(df["llm_model"] == model_name) & (df["task"] == task)]
-            sns.barplot(
+            bars = sns.barplot(
                 data=subdf,
                 x="feature_name",
                 y="abs_t",
@@ -99,6 +120,31 @@ def plot_attention_feature_importances(df, filename):
                 errorbar="sd",
                 ax=ax
             )
+            # Annotate bars with (ns) if not significant
+            for model in model_order:
+                for i, feature in enumerate(feature_order):
+                    sub_bar = subdf[(subdf["feature_name"] == feature) & (subdf["Model"] == model)]
+                    y_val = sub_bar["abs_t"].max()
+                    pval = sub_bar["p_value"].max()
+                    annotation = ""
+                    if pval >= 0.05:
+                        annotation = " (ns)"
+                    # Find the correct x position for this bar
+                    x_pos = i
+                    # Find the offset for the hue (attention method)
+                    n_hues = len(model_order)
+                    total_width = 0.8  # default seaborn bar width
+                    width_per_bar = total_width / n_hues
+                    hue_idx = model_order.index(model)
+                    x_offset = x_pos - total_width/2 + width_per_bar/2 + hue_idx*width_per_bar
+                    ax.text(
+                        x=x_offset,
+                        y=y_val + 0.02,
+                        s=annotation,
+                        ha='center',
+                        va='bottom',
+                    )
+
             if row_idx == 0:
                 ax.set_title(f"Task {task[-1]}", fontweight='bold', pad=10)
             if col_idx == 0:
