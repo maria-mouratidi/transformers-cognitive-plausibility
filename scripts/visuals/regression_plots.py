@@ -2,21 +2,7 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
-from scripts.analysis.correlation import FEATURES
-
-def set_academic_rcparams():
-    plt.rcParams.update({
-        'font.size': 38,
-        'axes.labelsize': 36,
-        'axes.titlesize': 42,
-        'xtick.labelsize': 40,
-        'ytick.labelsize': 44,
-        'legend.fontsize': 34,
-        'font.family': 'serif',
-        'font.serif': ['Times New Roman', 'DejaVu Serif', 'serif']
-    })
-
-MODEL_TITLE = {"bert": "BERT", "llama": "Llama"}
+from scripts.constants import CUSTOM_PALETTE, FEATURES, MODEL_TITLES, ols_plt_params, corr_plt_params
 
 def get_model_type(row):
     if row["predictors"] == "text_only":
@@ -25,8 +11,8 @@ def get_model_type(row):
         return "Attention"
     return "Other"
 
-def preprocess_perf_df(perf_path):
-    df = pd.read_csv(perf_path)
+def preprocess_perf_df(df):
+    df = df.copy()
     group_cols = ["task", "llm_model", "attn_method", "predictors", "dependent"]
     agg_cols = {"rsquared": "mean", "rsquared_adj": "mean", "rmse": "mean"}
     df = df.groupby(group_cols, as_index=False).agg(agg_cols)
@@ -35,10 +21,10 @@ def preprocess_perf_df(perf_path):
     df["attention_method"] = df["attn_method"]
     return df[df["ModelType"].isin(["Attention", "TextOnly"])]
 
-CUSTOM_PALETTE = ['#1f78b4', '#33a02c', '#e31a1c', '#ff7f00']
-
-def plot_metric(plot_df, metric, filename):
-    set_academic_rcparams()
+def plot_metric(df, metric, filename):
+    
+    plot_df = preprocess_perf_df(df)
+    plt.rcParams.update(ols_plt_params)
     plot_df = plot_df.copy()
     plot_df["bar_type"] = plot_df.apply(
         lambda row: "text only" if row["ModelType"] == "TextOnly" else f"text+{row['attention_method']}", axis=1
@@ -65,7 +51,7 @@ def plot_metric(plot_df, metric, filename):
         ax.set_xlabel("")
         ax.set_ylabel(r"$R^2$ adjusted" if metric == "rsquared_adj" else f"{metric.capitalize()}")
         ax.set_ylim(top=0.6)
-        ax.set_title(MODEL_TITLE[llm_model], fontweight='bold')
+        ax.set_title(MODEL_TITLES[llm_model], fontweight='bold')
         if idx == 1:
             ax.legend(title="Model", loc='upper right')
         else:
@@ -75,9 +61,9 @@ def plot_metric(plot_df, metric, filename):
     plt.savefig(filename, dpi=600, bbox_inches='tight', format='pdf')
     plt.close()
 
-def plot_attention_feature_importances(perf_path, filename):
-    set_academic_rcparams()
-    df = pd.read_csv(perf_path)
+def plot_attention_feature_importances(df, filename):
+    
+    plt.rcParams.update(ols_plt_params)
     df = df[
         (df["attn_method"].isin(["raw", "flow", "saliency"])) &
         (df["feature_name"] != "const") &
@@ -95,7 +81,7 @@ def plot_attention_feature_importances(perf_path, filename):
 
     n_rows = 2
     n_cols = len(task_order)
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(16.2 * n_cols, 11 * n_rows), sharey='row')
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(32.4, 22), sharey='row')
 
     for row_idx, model_name in enumerate(["bert", "llama"]):
         for col_idx, task in enumerate(task_order):
@@ -116,7 +102,7 @@ def plot_attention_feature_importances(perf_path, filename):
             if row_idx == 0:
                 ax.set_title(f"Task {task[-1]}", fontweight='bold', pad=10)
             if col_idx == 0:
-                ax.set_ylabel(f"|t| ({MODEL_TITLE[model_name]})")
+                ax.set_ylabel(f"|t| ({MODEL_TITLES[model_name]})")
             else:
                 ax.set_ylabel("")
             ax.set_xlabel("")
@@ -129,10 +115,3 @@ def plot_attention_feature_importances(perf_path, filename):
     plt.tight_layout()
     plt.savefig(f"{filename}.pdf", dpi=600, bbox_inches='tight', format='pdf')
     plt.close()
-
-# --- MAIN EXECUTION ---
-perf_path = "outputs/ols_unified_performance.csv"
-plot_df = preprocess_perf_df(perf_path)
-
-plot_metric(plot_df, "rsquared_adj", "outputs/ols_r2.pdf")
-plot_attention_feature_importances(perf_path, "outputs/ols_feature_importances")

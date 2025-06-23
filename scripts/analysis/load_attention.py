@@ -13,7 +13,8 @@ def load_processed_data(attn_method: str, task: str, model_name: str = "llama"):
     human_df = pd.read_csv(f'data/{task}/processed/processed_participants.csv')
     total_na = human_df.isna().sum().sum()
     if total_na > 0:
-        print(f"Warning: Found {total_na} NaN values in the human_df for task {task}. Filling with 0.")
+        pass
+        #print(f"Warning: Found {total_na} NaN values in the human_df for task {task}. Filling with 0.")
     human_df.fillna(0, inplace=True) # temporary fix for NaN values in the dataframe
 
     if attn_method == "raw":

@@ -2,21 +2,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import os
 import numpy as np
-import pandas as pd
-palette = "RdBu_r"  #diverging color palette
-
-def set_academic_rcparams():
-    plt.rcParams.update({
-        'font.size': 26,
-        'axes.labelsize': 28,
-        'axes.titlesize': 32,
-        'xtick.labelsize': 28,
-        'ytick.labelsize': 26,
-        'legend.fontsize': 25,
-        'font.family': 'serif',
-        'font.serif': ['Times New Roman', 'DejaVu Serif', 'serif']
-    })
-    plt.rcParams.update(plt.rcParamsDefault)
+from scripts.visuals.regression_plots import CUSTOM_PALETTE, MODEL_TITLES, TASK_TITLES, corr_plt_params
 
 def plot_other_corr(combined_df, save_dir=None, log_file=None):
     """
@@ -24,13 +10,11 @@ def plot_other_corr(combined_df, save_dir=None, log_file=None):
     for each model-task-method combination (flow & saliency only).
     Also logs the mean and std values.
     """
-    set_academic_rcparams()
+    plt.rcParams.update(corr_plt_params)
 
     # Filter only 'flow' and 'saliency' methods
     bar_df = combined_df[combined_df['attn_method'].isin(['flow', 'saliency'])].copy()
 
-    model_labels = {'llama': 'Llama', 'bert': 'BERT'}
-    task_labels = {'task2': 'Task 2', 'task3': 'Task 3'}
     colors = {
         ('bert', 'task2'): '#1f77b4',      # blue
         ('bert', 'task3'): '#aec7e8',      # light blue
@@ -70,7 +54,7 @@ def plot_other_corr(combined_df, save_dir=None, log_file=None):
             bar_colors.append(colors[(model, task)])
             hatches.append(method_hatches[method])
             log_lines.append(
-                f"{model_labels[model]} {task_labels[task]} {method}: mean={mean_val:.3f}, std={std_val:.3f}"
+                f"{MODEL_TITLES[model]} {TASK_TITLES[task]} {method}: mean={mean_val:.3f}, std={std_val:.3f}"
             )
 
         bars = plt.bar(
@@ -83,7 +67,7 @@ def plot_other_corr(combined_df, save_dir=None, log_file=None):
         all_bars.extend(bars)
 
     # X-tick labels
-    x_labels = [f"{model_labels[model]}\n{task_labels[task]}" for model, task in bar_order]
+    x_labels = [f"{MODEL_TITLES[model]}\n{TASK_TITLES[task]}" for model, task in bar_order]
     plt.xticks(x, x_labels)
     plt.ylabel("Spearman r")
     plt.ylim(-0.2, 0.8)
@@ -112,7 +96,7 @@ def plot_raw_corr(combined_df, save_dir=None, log_file=None):
     Each model-task pair has its own color, std as shadow.
     Also logs the mean and std values per layer.
     """
-    set_academic_rcparams()
+    plt.rcParams.update(corr_plt_params)
 
     pair_colors = {
         ('bert', 'task2'): '#1f77b4',      # blue
@@ -179,52 +163,49 @@ def plot_raw_corr(combined_df, save_dir=None, log_file=None):
                     dpi=600, bbox_inches='tight', format='pdf')
         plt.close()
 
-def plot_text_attn_corr(attn, text_features_df, filename, save_dir=None, model_name=None, only_selected_layer=False):
-    """
-    Plot a correlation matrix heatmap for each attention method vs each text feature.
-    If only_selected_layer is True, only plot BERT layer 0 or Llama layer 1.
-    """
-    import scipy.stats
+def plot_text_attn_corr(corr_df, save_path=None):
+    plt.rcParams.update(corr_plt_params)
+    method_order = ["raw", "flow", "saliency"]
 
-    set_academic_rcparams()
-    text_feature_names = ['frequency', 'length', 'surprisal', 'role']
+    # Prepare unique model-task pairs
+    pairs = [(m, t) for m in ['bert', 'llama'] for t in ['task2', 'task3']]
+    nrows, ncols = 2, 2  # 2 subplots in each row
 
-    # Select only the relevant layer if requested
-    if model_name.lower() == "bert":
-        attn['raw'] = attn['raw'][0, ...]  # Only layer 0
-        yticklabels = ["BERT L0"]
-    elif model_name.lower() == "llama":
-        attn['raw'] = attn['raw'][1, ...]  # Only layer 1
-        yticklabels = ["Llama L1"]
-    else:
-        yticklabels = [f"{model_name}"]
+    fig, axes = plt.subplots(nrows, ncols, figsize=(32.4, 22), sharey=True)
+    axes = axes.flatten() 
+    for idx, (model, task) in enumerate(pairs):
+        ax = axes[idx]
+        sub_df = corr_df[
+            (corr_df['llm_model'] == model) &
+            (corr_df['task'] == task)
+        ].copy()
+        sub_df["Text Feature"] = sub_df["text_feature"].str.capitalize()
+        sns.barplot(
+            data=sub_df,
+            x="Text Feature",
+            y="spearman_r",
+            hue="attn_method",
+            hue_order=method_order,
+            palette=CUSTOM_PALETTE[1:],
+            errorbar="sd",
+            capsize=0.1,
+            ci="sd",
+            estimator=np.mean,
+            ax=ax
+        )
+        ax.set_title(f"{model_labels[model]} - {task_labels[task]}", fontweight='bold')
+        ax.set_xlabel("")
+ 
+        ax.set_ylabel(f"Spearman r ({model_labels[model]})", fontsize=16)
+        #ax.set_ylim(-0.4, 0.7)
+        if idx != ncols - 1:
+            ax.get_legend().remove()
+        else:
+            ax.legend(title="Attention Method")
 
-    corr_matrix = np.zeros((len(attn.keys()), len(text_feature_names)))
-    for i, attn_method in enumerate(attn.keys()):
-        attn_values = attn[attn_method].flatten()
-        for j, feat in enumerate(text_feature_names):
-            feat_values = text_features_df[feat].values
-            r, _ = scipy.stats.spearmanr(attn_values, feat_values)
-            corr_matrix[i, j] = r
-
-    plt.figure()
-    sns.heatmap(
-        corr_matrix,
-        annot=True,
-        fmt=".2f",
-        cmap="RdBu_r",
-        center=0,
-        xticklabels=text_feature_names,
-        yticklabels=yticklabels,
-        cbar_kws={'label': 'Spearman r'}
-    )
-    plt.title("Correlation: Attention vs Text Feature")
-    plt.xlabel("Text Feature")
-    plt.ylabel("Layer")
     plt.tight_layout()
-    if save_dir:
-        plt.savefig(f"{save_dir}/{filename}.pdf",
-                    dpi=600, bbox_inches='tight', format='pdf')
+    if save_path:
+        plt.savefig(save_path, dpi=600, bbox_inches='tight', format='pdf')
         plt.close()
     else:
         plt.show()

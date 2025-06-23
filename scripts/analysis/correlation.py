@@ -4,9 +4,8 @@ from scipy.stats import spearmanr
 import torch
 from sklearn.decomposition import PCA
 from scripts.analysis.load_attention import load_processed_data
-from scripts.visuals.corr_plots import plot_other_corr, plot_raw_corr, plot_text_attn_corr
-
-FEATURES = ['nFixations', 'meanPupilSize', 'GD', 'TRT', 'FFD']
+from scripts.visuals.corr_plots import plot_other_corr, plot_raw_corr
+from scripts.constants import FEATURES, CUSTOM_PALETTE
 
 def map_token_indices(human_df):
     token_indices = [(row['Sent_ID'], row['Word_ID']) for _, row in human_df.iterrows()]
@@ -80,7 +79,6 @@ def run_full_analysis():
     all_pca_results = []
     for model_name in ['llama', 'bert']:
         for task in ["task2", "task3"]:
-            attention_all_methods = {}
             for attn_method in ["raw", "flow", "saliency"]:
                 human_df, attention, save_dir = load_processed_data(attn_method=attn_method, task=task, model_name=model_name)
                 
@@ -93,7 +91,7 @@ def run_full_analysis():
                 
                 # --- Correlation Analysis ---
                 results_df = correlation_analysis(attention_nonpadded, human_df)
-                pca_df, _, _, _ = apply_pca(human_df, FEATURES, n_components=1)
+                pca_df, _, _, _ = apply_pca(human_df, FEATURES, n_components=1) # 1 component is sufficient according to PCA-gaze correlations
                 pca_results_df = pca_correlation_analysis(attention_nonpadded, pca_df)
                 results_df['attn_method'] = attn_method
                 pca_results_df['attn_method'] = attn_method
@@ -103,22 +101,7 @@ def run_full_analysis():
                 pca_results_df['llm_model'] = model_name
                 all_gaze_results.append(results_df)
                 all_pca_results.append(pca_results_df)
-
-                attention_all_methods[attn_method] = attention_nonpadded
-
-            # --- Text Feature Correlation Heatmap ---
-            text_feat_path = f"materials/text_features_{task}_{model_name}.csv"
-            text_features_df = pd.read_csv(text_feat_path)
-            text_features_df['role'] = text_features_df['role'].map({'function': 0, 'content': 1})
-
-            plot_text_attn_corr(
-                attention_all_methods,
-                text_features_df,
-                f"text_corrs_{task}_{model_name}",
-                save_dir="outputs",
-                model_name=model_name,
-            )
-
+    
     # --- Combined Results ---
     all_gaze_results = pd.concat(all_gaze_results, ignore_index=True)
     all_pca_results = pd.concat(all_pca_results, ignore_index=True)
@@ -127,9 +110,8 @@ def run_full_analysis():
     plot_other_corr(combined_df, save_dir="outputs")
 
     # --- Feature Correlation Analysis ---
-    all_FEATURES = FEATURES + ['SFD', 'GPT']
-    pca_df, _, _, _ = apply_pca(human_df, all_FEATURES, variance_threshold=0.95)
-    #plot_gaze_intercorr(human_df, pca_df, all_FEATURES, save_dir="outputs")
+    #pca_df, _, _, _ = apply_pca(human_df, ALL_FEATURES, variance_threshold=0.95)
+    #plot_gaze_intercorr(human_df, pca_df, all_FEATURES, save_dir="outputs") # Plot all features for exploration
 
 if __name__ == "__main__":
     run_full_analysis()

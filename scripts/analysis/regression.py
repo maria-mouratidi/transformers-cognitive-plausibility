@@ -2,11 +2,14 @@ import warnings
 warnings.filterwarnings("ignore")
 import pandas as pd
 import numpy as np
+import scipy.stats
 from statsmodels.api import OLS, add_constant
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
-from scripts.analysis.correlation import load_processed_data, map_token_indices, apply_pca, FEATURES
+from scripts.analysis.correlation import load_processed_data, map_token_indices, apply_pca
+from scripts.constants import FEATURES
 from scripts.analysis.perm_feat_imp import compute_permutation_importance
+from scripts.visuals.corr_plots import plot_text_attn_corr
+from scripts.visuals.regression_plots import plot_metric, plot_attention_feature_importances
 # ------------------ Configurations ------------------
 llm_models = ["llama", "bert"]
 tasks = ["task2", "task3"]
@@ -21,7 +24,7 @@ def get_attention_features(attention_tensor, gaze_df, model_name, attn_method):
     sent_idx = np.array(sent_idx)
     word_idx = np.array(word_idx)
     if attn_method == "raw" and model_name == "llama":
-        selected_layers = [1, 31]
+        selected_layers = [1]
     else:
         selected_layers = [0]
     features = []
@@ -30,15 +33,6 @@ def get_attention_features(attention_tensor, gaze_df, model_name, attn_method):
     X_attention = np.column_stack(features)
     attn_names = [f"attention_layer_{i}" for i in selected_layers]
     return X_attention, attn_names
-
-def scale_text_features(X_train, X_test):
-    scaler = StandardScaler()
-    cols = ['frequency', 'length', 'surprisal']
-    X_train_scaled = X_train.copy()
-    X_test_scaled = X_test.copy()
-    X_train_scaled[cols] = scaler.fit_transform(X_train[cols])
-    X_test_scaled[cols] = scaler.transform(X_test[cols])
-    return X_train_scaled, X_test_scaled
 
 def run_ols(X_train, X_test, y_train, y_test, predictors, meta):
     X_train_const = add_constant(X_train)
@@ -74,6 +68,9 @@ def run_ols(X_train, X_test, y_train, y_test, predictors, meta):
             "perm_importance_std": perm_imp_dict.get(feat, (np.nan, np.nan))[1]
         })
 
+text_feature_names = ['frequency', 'length', 'role', 'surprisal']
+corr_results = []
+
 for task in tasks:
     for model_name in llm_models:
         #text_df = pd.read_csv(f'materials/text_features_{task}_{model_name}.csv')
@@ -86,7 +83,6 @@ for task in tasks:
         X_train_text, X_test_text, y_train_gaze, y_test_gaze, y_train_pca, y_test_pca = train_test_split(
             X_text, y_gaze, y_pca, test_size=0.2, random_state=42
         )
-        #X_train_text_scaled, X_test_text_scaled = scale_text_features(X_train_text, X_test_text)
 
         # TextOnly Gaze (baseline) for each model
         for col in y_gaze.columns:
@@ -106,19 +102,18 @@ for task in tasks:
             # if attn_method == "flow" and model_name == "bert" and task == "task2":
             #     continue
             gaze_df, attention_tensor, save_dir = load_processed_data(attn_method=attn_method, task=task, model_name=model_name)
-            print(f"Processing {task} with {model_name} and {attn_method} attention: {attention_tensor.shape}")
+            #print(f"Processing {task} with {model_name} and {attn_method} attention: {attention_tensor.shape}")
             y_gaze = gaze_df[FEATURES]
             y_pca, _, _, _ = apply_pca(gaze_df, FEATURES, n_components=1)
             X_attention, attn_names = get_attention_features(attention_tensor, gaze_df, model_name, attn_method)
             X_text_attn = X_text.copy()
             for idx, name in enumerate(attn_names):
                 X_text_attn[name] = X_attention[:, idx]
-            # Split
+
             X_train_attn, X_test_attn, y_train_gaze, y_test_gaze, y_train_pca, y_test_pca = train_test_split(
                 X_text_attn, y_gaze, y_pca, test_size=0.2, random_state=42
             )
-            #X_train_attn_scaled, X_test_attn_scaled = scale_text_features(X_train_attn, X_test_attn)
-            # Add attention columns (do not scale)
+            # Add attention columns
             for name in attn_names:
                 X_train_attn[name] = X_train_attn[name].values
                 X_test_attn[name] = X_test_attn[name].values
@@ -137,7 +132,27 @@ for task in tasks:
                 meta={"task": task, "llm_model": model_name, "attn_method": attn_method, "predictors": f"text+{attn_method}", "dependent": "pca"}
             )
 
+            for feat in text_feature_names:
+                feat_values = text_df[feat].values
+                r, pvalue = scipy.stats.spearmanr(X_attention, feat_values)
+                corr_results.append({
+                    "task": task,
+                    "llm_model": model_name,
+                    "attn_method": attn_method,
+                    "text_feature": feat,
+                    "spearman_r": r,
+                    "p_value": pvalue
+
+                })
+
 # Save unified results
 results_df = pd.DataFrame(results)
 results_df.to_csv("outputs/ols_unified_performance.csv", index=False)
-print("Unified OLS results saved to outputs/ols_unified_performance.csv")
+
+corr_df = pd.DataFrame(corr_results)
+#corr_df.to_csv("outputs/text_attn_corr.csv", index=False)
+
+# Plotting
+plot_metric(results_df, "rsquared_adj", "outputs/ols_r2.pdf")
+plot_attention_feature_importances(results_df, "outputs/ols_feature_importances")
+plot_text_attn_corr(corr_df, save_path="outputs/text_attn_corr.pdf")
