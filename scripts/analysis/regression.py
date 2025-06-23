@@ -86,19 +86,19 @@ for task in tasks:
         X_train_text, X_test_text, y_train_gaze, y_test_gaze, y_train_pca, y_test_pca = train_test_split(
             X_text, y_gaze, y_pca, test_size=0.2, random_state=42
         )
-        X_train_text_scaled, X_test_text_scaled = scale_text_features(X_train_text, X_test_text)
+        #X_train_text_scaled, X_test_text_scaled = scale_text_features(X_train_text, X_test_text)
 
         # TextOnly Gaze (baseline) for each model
         for col in y_gaze.columns:
             run_ols(
-                X_train_text_scaled, X_test_text_scaled, y_train_gaze[col], y_test_gaze[col],
-                predictors=list(X_train_text_scaled.columns),
+                X_train_text, X_test_text, y_train_gaze[col], y_test_gaze[col],
+                predictors=list(X_train_text.columns),
                 meta={"task": task, "llm_model": model_name, "attn_method": "none", "predictors": "text", "dependent": col}
             )
         # TextOnly PCA (baseline) for each model
         run_ols(
-            X_train_text_scaled, X_test_text_scaled, y_train_pca, y_test_pca,
-            predictors=list(X_train_text_scaled.columns),
+            X_train_text, X_test_text, y_train_pca, y_test_pca,
+            predictors=list(X_train_text.columns),
             meta={"task": task, "llm_model": model_name, "attn_method": "none", "predictors": "text", "dependent": "pca"}
         )
 
@@ -117,22 +117,22 @@ for task in tasks:
             X_train_attn, X_test_attn, y_train_gaze, y_test_gaze, y_train_pca, y_test_pca = train_test_split(
                 X_text_attn, y_gaze, y_pca, test_size=0.2, random_state=42
             )
-            X_train_attn_scaled, X_test_attn_scaled = scale_text_features(X_train_attn, X_test_attn)
+            #X_train_attn_scaled, X_test_attn_scaled = scale_text_features(X_train_attn, X_test_attn)
             # Add attention columns (do not scale)
             for name in attn_names:
-                X_train_attn_scaled[name] = X_train_attn[name].values
-                X_test_attn_scaled[name] = X_test_attn[name].values
-            predictors = list(X_train_attn_scaled.columns)
+                X_train_attn[name] = X_train_attn[name].values
+                X_test_attn[name] = X_test_attn[name].values
+            predictors = list(X_train_attn.columns)
             # 3/5/7. Attention Gaze
             for col in y_gaze.columns:
                 run_ols(
-                    X_train_attn_scaled, X_test_attn_scaled, y_train_gaze[col], y_test_gaze[col],
+                    X_train_attn, X_test_attn, y_train_gaze[col], y_test_gaze[col],
                     predictors=predictors,
                     meta={"task": task, "llm_model": model_name, "attn_method": attn_method, "predictors": f"text+{attn_method}", "dependent": col}
                 )
             # 4/6/8. Attention PCA
             run_ols(
-                X_train_attn_scaled, X_test_attn_scaled, y_train_pca, y_test_pca,
+                X_train_attn, X_test_attn, y_train_pca, y_test_pca,
                 predictors=predictors,
                 meta={"task": task, "llm_model": model_name, "attn_method": attn_method, "predictors": f"text+{attn_method}", "dependent": "pca"}
             )

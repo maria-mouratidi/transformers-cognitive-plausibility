@@ -7,15 +7,16 @@ palette = "RdBu_r"  #diverging color palette
 
 def set_academic_rcparams():
     plt.rcParams.update({
-        'font.size': 18,
-        'axes.labelsize': 20,
-        'axes.titlesize': 18,
-        'xtick.labelsize': 16,
-        'ytick.labelsize': 16,
-        'legend.fontsize': 16,
+        'font.size': 26,
+        'axes.labelsize': 28,
+        'axes.titlesize': 32,
+        'xtick.labelsize': 28,
+        'ytick.labelsize': 26,
+        'legend.fontsize': 25,
         'font.family': 'serif',
         'font.serif': ['Times New Roman', 'DejaVu Serif', 'serif']
     })
+    plt.rcParams.update(plt.rcParamsDefault)
 
 def plot_other_corr(combined_df, save_dir=None, log_file=None):
     """
@@ -177,3 +178,53 @@ def plot_raw_corr(combined_df, save_dir=None, log_file=None):
         plt.savefig(os.path.join(save_dir, f"correlations_raw.pdf"),
                     dpi=600, bbox_inches='tight', format='pdf')
         plt.close()
+
+def plot_text_attn_corr(attn, text_features_df, filename, save_dir=None, model_name=None, only_selected_layer=False):
+    """
+    Plot a correlation matrix heatmap for each attention method vs each text feature.
+    If only_selected_layer is True, only plot BERT layer 0 or Llama layer 1.
+    """
+    import scipy.stats
+
+    set_academic_rcparams()
+    text_feature_names = ['frequency', 'length', 'surprisal', 'role']
+
+    # Select only the relevant layer if requested
+    if model_name.lower() == "bert":
+        attn['raw'] = attn['raw'][0, ...]  # Only layer 0
+        yticklabels = ["BERT L0"]
+    elif model_name.lower() == "llama":
+        attn['raw'] = attn['raw'][1, ...]  # Only layer 1
+        yticklabels = ["Llama L1"]
+    else:
+        yticklabels = [f"{model_name}"]
+
+    corr_matrix = np.zeros((len(attn.keys()), len(text_feature_names)))
+    for i, attn_method in enumerate(attn.keys()):
+        attn_values = attn[attn_method].flatten()
+        for j, feat in enumerate(text_feature_names):
+            feat_values = text_features_df[feat].values
+            r, _ = scipy.stats.spearmanr(attn_values, feat_values)
+            corr_matrix[i, j] = r
+
+    plt.figure()
+    sns.heatmap(
+        corr_matrix,
+        annot=True,
+        fmt=".2f",
+        cmap="RdBu_r",
+        center=0,
+        xticklabels=text_feature_names,
+        yticklabels=yticklabels,
+        cbar_kws={'label': 'Spearman r'}
+    )
+    plt.title("Correlation: Attention vs Text Feature")
+    plt.xlabel("Text Feature")
+    plt.ylabel("Layer")
+    plt.tight_layout()
+    if save_dir:
+        plt.savefig(f"{save_dir}/{filename}.pdf",
+                    dpi=600, bbox_inches='tight', format='pdf')
+        plt.close()
+    else:
+        plt.show()
