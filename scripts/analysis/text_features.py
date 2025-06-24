@@ -8,7 +8,7 @@ from nltk.corpus import stopwords
 import torch
 import torch.nn.functional as F
 from scripts.probing.load_model import load_bert, load_llama
-from typing import List, Tuple
+import re
 from tqdm import tqdm
 
 # nltk.download('stopwords')
@@ -101,7 +101,7 @@ subset = False
 
 if __name__ == "__main__":
     tasks = ["task2", "task3"]
-    models = ["llama"]
+    models = ["bert", "llama"]
     attention_method = "raw"
     
     for model_name in models:
@@ -129,16 +129,22 @@ if __name__ == "__main__":
             prompt_len = loaded_data['prompt_len']
 
             # Compute surprisals
-            surprisals = get_surprisals(model, input_ids, word_mappings, prompt_len, tokenizer.pad_token_id, model_name, tokenizer)
-            # Save surprisals for reference
-            with open(f"outputs/{attention_method}/{task}/{model_name}/surprisals.json", "w") as f:
-                json.dump(surprisals, f)
+            # surprisals = get_surprisals(model, input_ids, word_mappings, prompt_len, tokenizer.pad_token_id, model_name, tokenizer)
+            # # Save surprisals for reference
+            # with open(f"outputs/{attention_method}/{task}/{model_name}/surprisals.json", "w") as f:
+            #     json.dump(surprisals, f)
+
+            with open(f"outputs/{attention_method}/{task}/{model_name}/surprisals.json", "r") as f:
+                surprisals = json.load(f)
 
             # Extract features
             features = []
+
             for sentence_idx, sentence in enumerate(sentences):
                 sentence_surprisals = surprisals[sentence_idx]
                 for word_idx, (word, surprisal) in enumerate(sentence_surprisals):
+                    if model_name == "llama":
+                        word = re.sub(r'^\s+', '', word) # Remove leading whitespace
                     frequency = get_frequency(word)
                     length = get_length(word)
                     role = get_role(word)
