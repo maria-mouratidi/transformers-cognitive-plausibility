@@ -1,4 +1,4 @@
-# MsC Artificial Intelligence
+# MSc Thesis Artificial Intelligence: Comparing Eye-gaze and Transformer Attention Mechanisms in Reading Tasks
 
 Thesis directory:
 cd /scratch/7982399/thesis
