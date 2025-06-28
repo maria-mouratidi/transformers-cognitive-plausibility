@@ -103,7 +103,7 @@ for task in TASKS:
         X_text = text_features_df[['frequency', 'length', 'surprisal', 'role']]
         gaze_df, _, _ = load_processed_data(attn_method="raw", task=task, model_name=llm_model)
         y_gaze = gaze_df[FEATURES]
-        y_pca, pca_model, _, _ = apply_pca(gaze_df, FEATURES, n_components=1)
+        y_pca, pca_model, explained_variance, _ = apply_pca(gaze_df, FEATURES, task)
         # text-only models
         X_train_text, X_test_text, y_train_gaze, y_test_gaze, y_train_pca, y_test_pca = train_test_split(
             X_text, y_gaze, y_pca, test_size=0.2, random_state=42)

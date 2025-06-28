@@ -58,7 +58,6 @@ def plot_metric(df, metric, filename):
                     # Get the Gaze row for the p-value
                     gaze_group = subdf[(subdf["x_label"] == tgt_x_lbl) & (subdf["BarType"] == bar_type)]
                     gaze_vs_pca_p = gaze_group["wilcoxon_pca_vs_gaze_p"].dropna().values
-                    print(gaze_group["wilcoxon_pca_vs_gaze_stat"].values)
                     _, combined_p = combine_pvalues(gaze_vs_pca_p, method='fisher')
                     if combined_p < 0.05:
                         ax.text(x_pos, y + 0.02, '*', ha='center', va='bottom', color='red')

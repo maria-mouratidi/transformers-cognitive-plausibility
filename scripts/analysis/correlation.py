@@ -4,8 +4,8 @@ from scipy.stats import spearmanr
 import torch
 from sklearn.decomposition import PCA
 from scripts.analysis.load_attention import load_processed_data
-from scripts.visuals.corr_plots import plot_other_corr, plot_raw_corr
-from scripts.constants import FEATURES, CUSTOM_PALETTE
+from scripts.visuals.corr_plots import plot_other_corr, plot_raw_corr, plot_pca_loadings
+from scripts.constants import FEATURES, ALL_FEATURES, CUSTOM_PALETTE, MODEL_TITLES, TASK_TITLES, corr_plt_params, ols_plt_params
 
 def map_token_indices(human_df):
     token_indices = [(row['Sent_ID'], row['Word_ID']) for _, row in human_df.iterrows()]
@@ -29,17 +29,28 @@ def correlation_analysis(attention_nonpadded, human_df):
             results.append(row)
     return pd.DataFrame(results)
 
-def apply_pca(human_df, features, n_components=None, variance_threshold=0.95):
-    pca = PCA()
+def apply_pca(human_df, features, task, variance_threshold=0.95):
+    # STEP 1: PCA to determine number of components for 95% variance
+    pca_full = PCA()
+    pca_full.fit(human_df[ALL_FEATURES])
+    cumulative_variance = np.cumsum(pca_full.explained_variance_ratio_)
+    n_components_required = np.argmax(cumulative_variance >= variance_threshold) + 1
+    print(task)
+    print(f"{n_components_required} components required to retain {variance_threshold * 100:.1f}% variance.")
+
+    # STEP 2: Plot loadings using full PCA
+    plot_pca_loadings(pca_full, features=ALL_FEATURES, filename=f"loadings_exploration_{task}")
+    pca_full = PCA(n_components=2)
+    pca_full.fit_transform(human_df[ALL_FEATURES])
+    print(f"Explained variance for full PCA with 2 component: {pca_full.explained_variance_ratio_[0]:.4f}")
+   
+    # STEP 3: Run PCA with only 1 component
+    pca = PCA(n_components=1)
     pca_features = pca.fit_transform(human_df[features])
-    cumulative_variance = np.cumsum(pca.explained_variance_ratio_)
-    if n_components is None:
-        n_components = np.argmax(cumulative_variance >= variance_threshold) + 1
-        print(f"Selected {n_components} components to retain {variance_threshold * 100}% variance")
-    pca = PCA(n_components=n_components)
-    pca_features = pca.fit_transform(human_df[features])
-    pca_df = pd.DataFrame(pca_features, columns=[f'PC{i+1}' for i in range(n_components)])
+    pca_df = pd.DataFrame(pca_features, columns=['PC1'])
     explained_variance = pca.explained_variance_ratio_
+    print(f"Explained variance for 1 component: {explained_variance[0]:.4f}\n\n")
+
     return pca_df, pca, explained_variance, cumulative_variance
 
 def pca_correlation_analysis(attention_nonpadded, pca_df):
@@ -91,7 +102,7 @@ def run_full_analysis():
                 
                 # --- Correlation Analysis ---
                 results_df = correlation_analysis(attention_nonpadded, human_df)
-                pca_df, _, _, _ = apply_pca(human_df, FEATURES, n_components=1) # 1 component is sufficient according to PCA-gaze correlations
+                pca_df, _, _, _ = apply_pca(human_df, FEATURES, task) # 1 component is sufficient according to PCA-gaze correlations
                 pca_results_df = pca_correlation_analysis(attention_nonpadded, pca_df)
                 results_df['attn_method'] = attn_method
                 pca_results_df['attn_method'] = attn_method
@@ -108,10 +119,6 @@ def run_full_analysis():
     combined_df = combine_results(all_gaze_results, all_pca_results)
     plot_raw_corr(combined_df, save_dir="outputs")
     plot_other_corr(combined_df, save_dir="outputs")
-
-    # --- Feature Correlation Analysis ---
-    #pca_df, _, _, _ = apply_pca(human_df, ALL_FEATURES, variance_threshold=0.95)
-    #plot_gaze_intercorr(human_df, pca_df, all_FEATURES, save_dir="outputs") # Plot all features for exploration
 
 if __name__ == "__main__":
     run_full_analysis()

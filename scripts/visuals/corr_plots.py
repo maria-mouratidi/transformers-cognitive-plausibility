@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import os
 import numpy as np
-from scripts.constants import CUSTOM_PALETTE, MODEL_TITLES, TASK_TITLES, corr_plt_params, ols_plt_params
+from scripts.constants import CUSTOM_PALETTE, MODEL_TITLES, TASK_TITLES, ALL_FEATURES, corr_plt_params, ols_plt_params
 
 def plot_other_corr(combined_df, save_dir=None, log_file=None):
     """
@@ -48,6 +48,7 @@ def plot_other_corr(combined_df, save_dir=None, log_file=None):
             ]
             grouped = sub_df.groupby('feature').agg({'spearman_r': 'mean', 'spearman_p_value': 'max'})
             mean_val = grouped['spearman_r'].mean()
+            print(f"Mean value for {model} {task} {method}: {mean_val:.3f}")
             std_val = grouped['spearman_r'].std()
             pval = grouped['spearman_p_value'].max() # conservative approach: max p value is used to assess significance
             means.append(mean_val)
@@ -253,3 +254,21 @@ def plot_text_attn_corr(corr_df, save_path=None):
         plt.close()
     else:
         plt.show()
+
+def plot_pca_loadings(pca, features, filename):
+    plt.rcParams.update(corr_plt_params)
+    loadings = pca.components_.T
+    feature_names = ["mPs" if f == "meanPupilSize" else "F" if f == "nFixations" else f for f in features]
+    x = np.arange(len(features))
+    
+    plt.figure(figsize=(10, 6))
+    width = 0.35
+    plt.bar(x - width/2, loadings[:, 0], width, alpha=0.7, label='PC1')
+    plt.bar(x + width/2, loadings[:, 1], width, alpha=0.7, label='PC2')
+   # plt.bar(x + width/3, loadings[:, 2], width, alpha=0.7, label='PC3')
+    plt.ylabel('PCA Loading Value')
+    plt.xticks(x, feature_names, ha='right')
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(f'outputs/{filename}.pdf', dpi=600, bbox_inches='tight', format='pdf')
+    plt.close()
