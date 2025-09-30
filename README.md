@@ -166,7 +166,7 @@ If you use this code, please cite:
 
 ## Contact
 
-First name: Maria
-Last name: Mouratidi
-Email: mouratidi.m@gmail.com
-Personal page: https://maria-mouratidi.github.io/
+- First name: Maria
+- Last name: Mouratidi
+- Email: mouratidi.m@gmail.com
+- Personal page: https://maria-mouratidi.github.io/
