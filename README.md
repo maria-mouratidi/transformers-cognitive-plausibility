@@ -5,29 +5,21 @@ This repository contains code for analyzing the cognitive plausibility of transf
 ## Overview
 
 The experiment investigates whether transformer attention patterns correlate with human cognitive processing during reading, using two tasks:
-- **Task 2**: Relation classification with 8 semantic relations
-- **Task 3**: Natural language inference with 3 labels (entailment, contradiction, neutral)
+- **Task 2**: Natural reading Wikipedia sentences
+- **Task 3**: Reading similar sentences wile looking for specifci semantic relation (e.g., job title)
+
+For more information about the eye-tracking data see the [ZuCo paper](https://doi.org/10.1038/sdata.2018.291)
 
 We probe two model types:
 - **BERT** (encoder-only): `bert-base-uncased`
-- **LLaMA** (decoder-only): `meta-llama/Llama-2-7b-chat-hf`
+- **LLaMA** (decoder-only): `meta-llama/Llama-3.1-8b`
 
 Using three probing techniques:
 - **Raw**: Direct attention weights
 - **Flow**: Attention flow between layers
 - **Saliency**: Gradient-based saliency maps
 
-## Quick Start
-
-The repository contains pre-computed results in the `outputs/` directory, so you can start with analysis and visualization without running the computationally expensive probing steps.
-
-For new users, we recommend:
-1. **Start with analysis**: Use existing results in `outputs/`
-2. **Explore visualizations**: Run plotting scripts in `scripts/visuals/`
-3. **Understand data processing**: Examine scripts in `scripts/data_processing/`
-4. **Run probing (optional)**: Only if you have GPU resources and want to recompute
-
-## Understanding the Codebase
+## Understanding the repository
 
 ### 1. Data Processing Scripts
 
@@ -158,16 +150,11 @@ Each directory contains:
         └── task3/{bert,llama}/      # Task 3 saliency
 ```
 
-### Hardware Requirements
-- **CPU**: Multi-core recommended for data processing
-- **Memory**: 16GB+ RAM recommended
-- **GPU**: Highly recommended for probing (especially flow attention)
-
 ### Tips
 
 1. **Use Pre-computed Results**: Skip probing by using files in `outputs/`
 2. **GPU Acceleration**: Use CUDA for faster probing (especially flow attention)
-3. Original processed data accessible: [under results](https://osf.io/q3zws/files/osfstorage#)
+3. Original processed data accessible [here, under answers](https://osf.io/q3zws/files/osfstorage#)
 
 ## Citation
 
@@ -179,4 +166,7 @@ If you use this code, please cite:
 
 ## Contact
 
-mouratidi.m@gmail.com
+First name: Maria
+Last name: Mouratidi
+Email: mouratidi.m@gmail.com
+Personal page: https://maria-mouratidi.github.io/
